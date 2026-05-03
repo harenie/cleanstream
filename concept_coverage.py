@@ -143,29 +143,41 @@ def compare_concepts_with_answer(
 
 def add_concept_coverage_columns(
     dataframe: pd.DataFrame,
-    model_answer_column: str = "generated_answer",
+    model_answer_column: str = "model_answer",
     student_answer_column: str = "synthetic_answer",
-    score_column: str = "ai_score",
     question_id_column: str = "question_id",
     max_concepts: int = 20,
+    require_model_answer: bool = False,
 ) -> pd.DataFrame:
-    """Add concept keyword and coverage columns to a preprocessed dataset."""
+    """Add model-vs-student concept keyword and coverage columns."""
     processed = preprocess_dataframe(dataframe)
+    model_answer_column = choose_model_answer_column(processed, model_answer_column)
     model_answers = infer_model_answers(
         processed,
         model_answer_column=model_answer_column,
-        score_column=score_column,
         question_id_column=question_id_column,
+        require_model_answer=require_model_answer,
     )
 
     output = processed.copy()
+    answer_column = choose_student_answer_column(output, student_answer_column)
+
+    if student_answer_column in output.columns:
+        output = output.rename(columns={student_answer_column: "student_answer"})
+    if f"{student_answer_column}_clean" in output.columns:
+        output = output.rename(columns={f"{student_answer_column}_clean": "student_answer_clean"})
+
     concept_keywords_values: list[str] = []
     present_values: list[str] = []
     missing_values: list[str] = []
     ratio_values: list[float] = []
     model_answer_values: list[str] = []
+    missing_model_answer_values: list[bool] = []
 
-    answer_column = choose_student_answer_column(output, student_answer_column)
+    if answer_column == student_answer_column:
+        answer_column = "student_answer"
+    elif answer_column == f"{student_answer_column}_clean":
+        answer_column = "student_answer_clean"
 
     for _, row in output.iterrows():
         question_id = row[question_id_column]
@@ -174,28 +186,29 @@ def add_concept_coverage_columns(
         comparison = compare_concepts_with_answer(concepts, row[answer_column])
 
         model_answer_values.append(model_answer)
+        missing_model_answer_values.append(not bool(model_answer))
         concept_keywords_values.append("; ".join(concepts))
         present_values.append("; ".join(comparison["concepts_present"]))
         missing_values.append("; ".join(comparison["concepts_missing"]))
         ratio_values.append(comparison["concept_coverage_ratio"])
 
-    output["model_answer_used"] = model_answer_values
+    output = drop_source_model_answer_columns(output, keep_column=model_answer_column)
+    output["model_answer"] = model_answer_values
+    output["missing_model_answer"] = missing_model_answer_values
     output["concepts"] = concept_keywords_values
-    output["concept_keywords"] = concept_keywords_values
     output["concepts_present"] = present_values
     output["concepts_missing"] = missing_values
     output["concepts_covered_ratio"] = ratio_values
-    output["concept_coverage_ratio"] = ratio_values
     return output
 
 
 def infer_model_answers(
     dataframe: pd.DataFrame,
     model_answer_column: str,
-    score_column: str,
     question_id_column: str,
+    require_model_answer: bool,
 ) -> dict[object, str]:
-    """Use the highest-scoring generated answer as the model answer per question."""
+    """Use the marking-schema/model answer for each question."""
     missing = [
         column
         for column in [question_id_column, model_answer_column]
@@ -206,19 +219,71 @@ def infer_model_answers(
 
     model_answers: dict[object, str] = {}
     for question_id, group in dataframe.groupby(question_id_column, dropna=False):
-        ordered = group.copy()
-        if score_column in ordered.columns and ordered[score_column].notna().any():
-            ordered = ordered.sort_values(score_column, ascending=False, na_position="last")
-        model_answers[question_id] = str(ordered.iloc[0][model_answer_column])
+        answers = [
+            clean_text(value)
+            for value in group[model_answer_column].tolist()
+            if clean_text(value)
+        ]
+        if not answers:
+            if require_model_answer:
+                raise ValueError(
+                    f"No marking-schema/model answer found for question_id {question_id!r} "
+                    f"in column {model_answer_column!r}."
+                )
+            model_answers[question_id] = ""
+        else:
+            model_answers[question_id] = answers[0]
 
     return model_answers
 
 
+def choose_model_answer_column(dataframe: pd.DataFrame, preferred_column: str) -> str:
+    """Choose the marking-schema/model-answer column, never generated answers by default."""
+    candidates = [
+        preferred_column,
+        "model_answer",
+        "marking_schema_answer",
+        "marking_scheme_answer",
+        "scheme",
+        "answer_scheme",
+        "rubric_answer",
+    ]
+    for column in candidates:
+        if column in dataframe.columns and dataframe[column].apply(clean_text).any():
+            return column
+    raise ValueError(
+        "No populated marking-schema/model-answer column found. "
+        f"Tried: {candidates}. The generated_answer column is not used for concept coverage."
+    )
+
+
 def choose_student_answer_column(dataframe: pd.DataFrame, preferred_column: str) -> str:
     """Prefer cleaned student-answer text when available."""
-    clean_column = f"{preferred_column}_clean"
-    if clean_column in dataframe.columns:
-        return clean_column
-    if preferred_column in dataframe.columns:
-        return preferred_column
-    raise ValueError(f"Missing student answer column: {preferred_column}")
+    candidates = [preferred_column, "student_answer", "synthetic_answer", "answer"]
+    for column in candidates:
+        clean_column = f"{column}_clean"
+        if clean_column in dataframe.columns:
+            return clean_column
+        if column in dataframe.columns:
+            return column
+    raise ValueError(f"Missing student answer column. Tried: {candidates}")
+
+
+def drop_source_model_answer_columns(dataframe: pd.DataFrame, keep_column: str) -> pd.DataFrame:
+    """Remove raw generated-answer and schema-source columns from the final output."""
+    columns_to_drop = {
+        "generated_answer",
+        "generated_answer_clean",
+        "scheme",
+        "scheme_clean",
+        "model_answer_clean",
+        "marking_schema_answer",
+        "marking_schema_answer_clean",
+        "marking_scheme_answer",
+        "marking_scheme_answer_clean",
+        "answer_scheme",
+        "answer_scheme_clean",
+        "rubric_answer",
+        "rubric_answer_clean",
+    }
+    return dataframe.drop(columns=[col for col in columns_to_drop if col in dataframe.columns])

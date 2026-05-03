@@ -28,10 +28,11 @@ The preprocessing step:
 
 The concept coverage step:
 
-- chooses the highest-scoring generated answer as the model answer for each question
+- compares each `student_answer` against the marking-schema `model_answer`
 - extracts concept keywords from the model answer
-- adds `concepts`, `concepts_present`, `concepts_missing`, and `concepts_covered_ratio`
-- keeps `concept_keywords` and `concept_coverage_ratio` as compatibility aliases
+- renames the dataset's student-answer field to `student_answer` in the concept output
+- removes raw `generated_answer` columns from the concept output
+- adds `model_answer`, `missing_model_answer`, `concepts`, `concepts_present`, `concepts_missing`, and `concepts_covered_ratio`
 
 ## Setup
 
@@ -67,8 +68,10 @@ That output file is only for local checking. It does not need to be committed.
 To add concept coverage columns:
 
 ```powershell
-python run_concept_coverage.py "Synthetic Data - FOR PREPROCESS.xlsx" --output concept_coverage_output.xlsx
+python run_concept_coverage.py "Synthetic Data - FOR PREPROCESS.xlsx" --model-answers-file "P:\Harine_Project\automated_answer_grader\data\reference\model_answers.csv" --output concept_coverage_output.xlsx
 ```
+
+If the dataset already has a populated `model_answer` column, the `--model-answers-file` argument is optional.
 
 ## Main Function For Review
 

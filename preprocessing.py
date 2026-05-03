@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 
-ANSWER_COLUMNS = ("synthetic_answer", "generated_answer", "answer")
+ANSWER_COLUMNS = ("student_answer", "synthetic_answer", "generated_answer", "answer")
 
 
 def clean_text(value: object) -> str:
@@ -99,4 +99,3 @@ def build_preprocessing_summary(dataframe: pd.DataFrame) -> dict[str, object]:
         summary["answer_count"] = int(dataframe["answer_id"].nunique())
 
     return summary
-
