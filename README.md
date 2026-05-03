@@ -8,6 +8,8 @@ This repository is intentionally small so group members can review just the prep
 
 - `preprocessing.py` - reusable preprocessing functions.
 - `run_preprocessing.py` - command-line script to run preprocessing on an Excel or CSV dataset.
+- `concept_coverage.py` - reusable concept extraction and concept coverage helpers.
+- `run_concept_coverage.py` - command-line script to add concept coverage columns.
 - `README.md` - setup and usage instructions.
 
 No dataset files or generated output files are included in this repository.
@@ -23,6 +25,13 @@ The preprocessing step:
 - trims chapter and difficulty values
 - prints a small summary with row count, columns, missing values, question count, and answer count
 - saves a cleaned CSV for checking
+
+The concept coverage step:
+
+- chooses the highest-scoring generated answer as the model answer for each question
+- extracts concept keywords from the model answer
+- adds `concepts`, `concepts_present`, `concepts_missing`, and `concepts_covered_ratio`
+- keeps `concept_keywords` and `concept_coverage_ratio` as compatibility aliases
 
 ## Setup
 
@@ -54,6 +63,12 @@ preprocessed_dataset.csv
 ```
 
 That output file is only for local checking. It does not need to be committed.
+
+To add concept coverage columns:
+
+```powershell
+python run_concept_coverage.py "Synthetic Data - FOR PREPROCESS.xlsx" --output concept_coverage_output.xlsx
+```
 
 ## Main Function For Review
 
