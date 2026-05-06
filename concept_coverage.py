@@ -220,7 +220,7 @@ def infer_model_answers(
     model_answers: dict[object, str] = {}
     for question_id, group in dataframe.groupby(question_id_column, dropna=False):
         answers = [
-            clean_text(value)
+            str(value).strip()
             for value in group[model_answer_column].tolist()
             if clean_text(value)
         ]

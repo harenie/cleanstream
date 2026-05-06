@@ -1,8 +1,8 @@
 # Cleanstream
 
-Preprocessing-only code for the synthetic answer dataset.
+Preprocessing, concept coverage, semantic similarity, and first training baseline code for the synthetic answer dataset.
 
-This repository is intentionally small so group members can review just the preprocessing work before it is connected to the full grading pipeline.
+This repository is intentionally small so group members can review the early grading pipeline before it is connected to the full project.
 
 ## Files
 
@@ -10,9 +10,13 @@ This repository is intentionally small so group members can review just the prep
 - `run_preprocessing.py` - command-line script to run preprocessing on an Excel or CSV dataset.
 - `concept_coverage.py` - reusable concept extraction and concept coverage helpers.
 - `run_concept_coverage.py` - command-line script to add concept coverage columns.
+- `semantic_similarity.py` - reusable TF-IDF cosine semantic similarity helpers.
+- `run_semantic_similarity.py` - command-line script to add semantic similarity columns.
+- `run_training.py` - command-line script to train and evaluate the first score baseline.
+- `requirements.txt` - Python packages required for preprocessing, similarity, and training.
 - `README.md` - setup and usage instructions.
 
-No dataset files or generated output files are included in this repository.
+Generated output files are local checking artifacts and do not need to be committed.
 
 ## What The Code Does
 
@@ -34,6 +38,20 @@ The concept coverage step:
 - removes raw `generated_answer` columns from the concept output
 - adds `model_answer`, `missing_model_answer`, `concepts`, `concepts_present`, `concepts_missing`, and `concepts_covered_ratio`
 
+The semantic similarity step:
+
+- compares each `student_answer` against the marking-schema `model_answer`
+- uses a TF-IDF word n-gram vectorizer and cosine similarity
+- adds `semantic_similarity_score`, `student_answer_length`, and `model_answer_length`
+- marks rows without a model answer as `missing_model_answer`
+
+The first training baseline:
+
+- trains a Ridge regression model to predict `ai_score`
+- uses `semantic_similarity_score`, `concepts_covered_ratio`, `student_answer_length`, and `model_answer_length`
+- uses a fixed `2/3` train and `1/3` test split with `random_state=42`
+- writes the split, predictions, metrics, and trained model to `training_results`
+
 ## Setup
 
 Create and activate a virtual environment:
@@ -47,6 +65,12 @@ Install the required packages:
 
 ```powershell
 pip install pandas openpyxl
+```
+
+For semantic similarity and training, install all requirements:
+
+```powershell
+pip install -r requirements.txt
 ```
 
 ## Run
@@ -72,6 +96,20 @@ python run_concept_coverage.py "Synthetic Data - FOR PREPROCESS.xlsx" --model-an
 ```
 
 If the dataset already has a populated `model_answer` column, the `--model-answers-file` argument is optional.
+
+To add semantic similarity columns:
+
+```powershell
+python run_semantic_similarity.py "Synthetic Data - FOR PREPROCESS.xlsx" --model-answers-file "P:\Harine_Project\automated_answer_grader\data\reference\model_answers.csv" --output semantic_similarity_output.xlsx
+```
+
+To train the first `ai_score` baseline:
+
+```powershell
+python run_training.py "Synthetic Data - FOR PREPROCESS.xlsx" --model-answers-file "P:\Harine_Project\automated_answer_grader\data\reference\model_answers.csv" --output-dir training_results
+```
+
+The current reference file has model answers for `Q1`, `Q2`, and `Q3`, so training currently uses `36` eligible rows. Add the remaining marking-schema answers to the reference file before treating the metrics as full-dataset results.
 
 ## Main Function For Review
 

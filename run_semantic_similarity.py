@@ -1,4 +1,4 @@
-"""Command-line runner for concept keyword coverage."""
+"""Command-line runner for semantic similarity features."""
 
 from __future__ import annotations
 
@@ -8,20 +8,20 @@ from pathlib import Path
 
 import pandas as pd
 
-from concept_coverage import add_concept_coverage_columns
 from model_answers import attach_model_answers
-from preprocessing import build_preprocessing_summary, load_dataset
+from preprocessing import load_dataset
+from semantic_similarity import add_semantic_similarity_columns, build_semantic_summary
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Add concept keyword, missing concept, and coverage columns."
+        description="Add semantic similarity between student answers and model answers."
     )
-    parser.add_argument("input", type=Path, help="Path to preprocessed .csv/.xlsx dataset.")
+    parser.add_argument("input", type=Path, help="Path to .csv/.xlsx dataset.")
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("concept_coverage_output.xlsx"),
+        default=Path("semantic_similarity_output.xlsx"),
         help="Output .xlsx or .csv path.",
     )
     parser.add_argument(
@@ -42,13 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--question-id-column",
         default="question_id",
-        help="Question id column used for grouping answers.",
-    )
-    parser.add_argument(
-        "--max-concepts",
-        type=int,
-        default=20,
-        help="Maximum number of concept keywords per model answer.",
+        help="Question id column used for attaching model answers.",
     )
     parser.add_argument(
         "--strict-model-answers",
@@ -69,19 +63,16 @@ def main() -> None:
             model_answer_column=args.model_answer_column,
         )
 
-    output = add_concept_coverage_columns(
+    output = add_semantic_similarity_columns(
         dataframe,
         model_answer_column=args.model_answer_column,
         student_answer_column=args.student_answer_column,
         question_id_column=args.question_id_column,
-        max_concepts=args.max_concepts,
         require_model_answer=args.strict_model_answers,
     )
-
     save_output(output, args.output)
-    summary = build_summary(output)
-    print(json.dumps(summary, indent=2, ensure_ascii=True))
-    print(f"\nSaved concept coverage output to: {args.output}")
+    print(json.dumps(build_semantic_summary(output), indent=2, ensure_ascii=True))
+    print(f"\nSaved semantic similarity output to: {args.output}")
 
 
 def save_output(dataframe: pd.DataFrame, path: Path) -> None:
@@ -90,17 +81,6 @@ def save_output(dataframe: pd.DataFrame, path: Path) -> None:
         dataframe.to_csv(path, index=False)
         return
     dataframe.to_excel(path, index=False)
-
-
-def build_summary(dataframe: pd.DataFrame) -> dict[str, object]:
-    summary = build_preprocessing_summary(dataframe)
-    summary["average_concepts_covered_ratio"] = round(
-        float(dataframe["concepts_covered_ratio"].mean()),
-        4,
-    )
-    if "missing_model_answer" in dataframe.columns:
-        summary["rows_missing_model_answer"] = int(dataframe["missing_model_answer"].sum())
-    return summary
 
 
 if __name__ == "__main__":

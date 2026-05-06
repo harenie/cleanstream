@@ -1,0 +1,54 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+venv/
+ENV/
+.env
+.env.*
+
+# VS Code
+.vscode/
+
+# Pytest
+.pytest_cache/
+
+# IPython
+.ipynb_checkpoints/
+
+# mypy
+.mypy_cache/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Model / training artifacts
+training_results/
+training_results_model_answers/
+*.joblib
+
+# Temporary files
+*.swp
+*~
+
+# IDEs
+.idea/
+
+# Optional: local data or large files
+data/
+
+# User-specific files
+secrets.json
