@@ -12,6 +12,8 @@ dist/
 *.egg-info/
 
 # Virtual environments
+.venv/
+.venv_clean/
 venv/
 ENV/
 .env
@@ -35,9 +37,11 @@ ENV/
 # Logs
 *.log
 
-# Model / training artifacts
+# Model / generated artifacts
 training_results/
 training_results_model_answers/
+outputs/
+models/
 *.joblib
 
 # Temporary files
@@ -48,7 +52,8 @@ training_results_model_answers/
 .idea/
 
 # Optional: local data or large files
-data/
+data/processed/
+data/tmp/
 
 # User-specific files
 secrets.json

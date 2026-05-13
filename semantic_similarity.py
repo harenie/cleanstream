@@ -45,12 +45,60 @@ class SemanticSimilarityEngine:
         return round(float(score), 4)
 
 
+class SentenceBertSimilarityEngine:
+    """Optional Sentence-BERT similarity engine loaded only when requested."""
+
+    def __init__(
+        self,
+        corpus: list[str] | None = None,
+        model_name: str = "all-MiniLM-L6-v2",
+    ) -> None:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise ImportError(
+                "Sentence-BERT support requires installing sentence-transformers. "
+                "Use --similarity-backend tfidf for the local baseline."
+            ) from exc
+
+        self.model_name = model_name
+        self.model = SentenceTransformer(model_name)
+
+    def fit(self, corpus: list[str]) -> None:
+        """Sentence-BERT models are pre-trained, so no local fitting is required."""
+
+    def similarity(self, text_a: object, text_b: object) -> float:
+        """Return cosine similarity from 0.0 to 1.0."""
+        a = clean_text(text_a)
+        b = clean_text(text_b)
+        if not a or not b:
+            return 0.0
+
+        vectors = self.model.encode([a, b], normalize_embeddings=True)
+        score = float(vectors[0] @ vectors[1])
+        return round(max(0.0, min(1.0, score)), 4)
+
+
+def build_similarity_engine(
+    backend: str = "tfidf",
+    corpus: list[str] | None = None,
+) -> SemanticSimilarityEngine | SentenceBertSimilarityEngine:
+    """Build the requested semantic similarity engine."""
+    normalized = backend.lower().replace("_", "-")
+    if normalized == "tfidf":
+        return SemanticSimilarityEngine(corpus)
+    if normalized in {"sentence-bert", "sbert"}:
+        return SentenceBertSimilarityEngine(corpus)
+    raise ValueError("similarity backend must be 'tfidf' or 'sentence-bert'")
+
+
 def add_semantic_similarity_columns(
     dataframe: pd.DataFrame,
     model_answer_column: str = "model_answer",
     student_answer_column: str = "synthetic_answer",
     question_id_column: str = "question_id",
     require_model_answer: bool = False,
+    similarity_backend: str = "tfidf",
 ) -> pd.DataFrame:
     """Add model-vs-student semantic similarity columns."""
     processed = preprocess_dataframe(dataframe)
@@ -79,7 +127,7 @@ def add_semantic_similarity_columns(
     student_answer_values = output[answer_column].fillna("").astype(str).tolist()
     corpus = [answer for answer in model_answer_values if clean_text(answer)]
     corpus.extend(student_answer_values)
-    engine = SemanticSimilarityEngine(corpus)
+    engine = build_similarity_engine(similarity_backend, corpus)
 
     output = drop_source_model_answer_columns(output, keep_column=model_answer_column)
     output["model_answer"] = model_answer_values

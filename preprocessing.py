@@ -28,6 +28,11 @@ def clean_text(value: object) -> str:
     return text.strip()
 
 
+def tokenize_text(value: object) -> list[str]:
+    """Tokenize cleaned text into simple lowercase word tokens."""
+    return re.findall(r"[a-z0-9]+(?:'[a-z]+)?", clean_text(value))
+
+
 def normalize_column_names(dataframe: pd.DataFrame) -> pd.DataFrame:
     """Standardize column names to lowercase snake_case."""
     renamed = {

@@ -127,11 +127,26 @@ def extract_concept_keywords(model_answer: object, max_concepts: int = 20) -> li
 def compare_concepts_with_answer(
     concept_keywords: list[str],
     student_answer: object,
+    similarity_engine: object | None = None,
+    semantic_threshold: float = 0.12,
 ) -> dict[str, object]:
     """Calculate present concepts, missing concepts, and coverage ratio."""
     student_words = set(tokenize(student_answer))
-    present = [concept for concept in concept_keywords if concept in student_words]
-    missing = [concept for concept in concept_keywords if concept not in student_words]
+    present: list[str] = []
+    missing: list[str] = []
+
+    for concept in concept_keywords:
+        exact_match = concept in student_words
+        semantic_match = False
+        if similarity_engine is not None:
+            semantic_match = (
+                similarity_engine.similarity(concept, student_answer) >= semantic_threshold
+            )
+        if exact_match or semantic_match:
+            present.append(concept)
+        else:
+            missing.append(concept)
+
     ratio = round(len(present) / len(concept_keywords), 4) if concept_keywords else 0.0
 
     return {
@@ -148,6 +163,7 @@ def add_concept_coverage_columns(
     question_id_column: str = "question_id",
     max_concepts: int = 20,
     require_model_answer: bool = False,
+    similarity_engine: object | None = None,
 ) -> pd.DataFrame:
     """Add model-vs-student concept keyword and coverage columns."""
     processed = preprocess_dataframe(dataframe)
@@ -183,7 +199,11 @@ def add_concept_coverage_columns(
         question_id = row[question_id_column]
         model_answer = model_answers[question_id]
         concepts = extract_concept_keywords(model_answer, max_concepts=max_concepts)
-        comparison = compare_concepts_with_answer(concepts, row[answer_column])
+        comparison = compare_concepts_with_answer(
+            concepts,
+            row[answer_column],
+            similarity_engine=similarity_engine,
+        )
 
         model_answer_values.append(model_answer)
         missing_model_answer_values.append(not bool(model_answer))
@@ -199,6 +219,7 @@ def add_concept_coverage_columns(
     output["concepts_present"] = present_values
     output["concepts_missing"] = missing_values
     output["concepts_covered_ratio"] = ratio_values
+    output["concept_coverage_ratio"] = ratio_values
     return output
 
 
