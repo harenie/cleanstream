@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from preprocessing import clean_text, load_dataset, normalize_column_names
+from preprocessing.preprocessing import clean_text, load_dataset, normalize_column_names
 
 
 MODEL_ANSWER_CANDIDATES = [

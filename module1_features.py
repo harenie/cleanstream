@@ -5,9 +5,12 @@ from __future__ import annotations
 import pandas as pd
 
 from concept_coverage import add_concept_coverage_columns
-from preprocessing import clean_text, preprocess_dataframe
+from preprocessing.preprocessing import clean_text, preprocess_dataframe
 from reasoning import assess_reasoning, detect_contradictions, detect_noise
-from semantic_similarity import add_semantic_similarity_columns, build_similarity_engine
+from semantic_similarity.semantic_similarity import (
+    add_semantic_similarity_columns,
+    build_similarity_engine,
+)
 
 
 def build_module1_features(

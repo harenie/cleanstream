@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from preprocessing import (
+from preprocessing.preprocessing import (
     build_preprocessing_summary,
     load_dataset,
     preprocess_dataframe,
@@ -39,4 +39,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

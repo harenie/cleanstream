@@ -15,8 +15,8 @@ from sklearn.model_selection import train_test_split
 
 from concept_coverage import add_concept_coverage_columns
 from model_answers import attach_model_answers
-from preprocessing import clean_text, load_dataset
-from semantic_similarity import add_semantic_similarity_columns
+from preprocessing.preprocessing import clean_text, load_dataset
+from semantic_similarity.semantic_similarity import add_semantic_similarity_columns
 
 
 FEATURE_COLUMNS = [

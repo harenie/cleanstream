@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from preprocessing import clean_text, tokenize_text
+from preprocessing.preprocessing import clean_text, tokenize_text
 
 
 REASONING_CONNECTIVES = [

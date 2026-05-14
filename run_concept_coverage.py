@@ -10,7 +10,7 @@ import pandas as pd
 
 from concept_coverage import add_concept_coverage_columns
 from model_answers import attach_model_answers
-from preprocessing import build_preprocessing_summary, load_dataset
+from preprocessing.preprocessing import build_preprocessing_summary, load_dataset
 
 
 def parse_args() -> argparse.Namespace:

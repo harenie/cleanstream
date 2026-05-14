@@ -7,7 +7,7 @@ from collections import Counter
 
 import pandas as pd
 
-from preprocessing import clean_text, preprocess_dataframe
+from preprocessing.preprocessing import clean_text, preprocess_dataframe
 
 
 STOPWORDS = {

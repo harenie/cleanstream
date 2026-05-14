@@ -6,11 +6,11 @@ This repository is intentionally small so group members can review the early gra
 
 ## Files
 
-- `preprocessing.py` - reusable preprocessing functions.
+- `preprocessing/preprocessing.py` - reusable preprocessing functions.
 - `run_preprocessing.py` - command-line script to run preprocessing on an Excel or CSV dataset.
 - `concept_coverage.py` - reusable concept extraction and concept coverage helpers.
 - `run_concept_coverage.py` - command-line script to add concept coverage columns.
-- `semantic_similarity.py` - reusable TF-IDF cosine semantic similarity helpers.
+- `semantic_similarity/semantic_similarity.py` - reusable TF-IDF cosine semantic similarity helpers.
 - `run_semantic_similarity.py` - command-line script to add semantic similarity columns.
 - `run_training.py` - command-line script to train and evaluate the first score baseline.
 - `requirements.txt` - Python packages required for preprocessing, similarity, and training.
@@ -78,7 +78,7 @@ pip install -r requirements.txt
 From inside this repository:
 
 ```powershell
-python run_preprocessing.py "P:\Harine_Project\Synthetic Data - FOR PREPROCESS.xlsx" --output preprocessed_dataset.csv
+python run_preprocessing.py "data\raw\synthetic_dataset.xlsx" --output outputs\preprocessed_dataset.csv
 ```
 
 The script prints a preprocessing summary and creates:
@@ -92,7 +92,7 @@ That output file is only for local checking. It does not need to be committed.
 To add concept coverage columns:
 
 ```powershell
-python run_concept_coverage.py "Synthetic Data - FOR PREPROCESS.xlsx" --model-answers-file "P:\Harine_Project\automated_answer_grader\data\reference\model_answers.csv" --output concept_coverage_output.xlsx
+python run_concept_coverage.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --output outputs\concept_coverage_output.xlsx
 ```
 
 If the dataset already has a populated `model_answer` column, the `--model-answers-file` argument is optional.
@@ -100,13 +100,13 @@ If the dataset already has a populated `model_answer` column, the `--model-answe
 To add semantic similarity columns:
 
 ```powershell
-python run_semantic_similarity.py "Synthetic Data - FOR PREPROCESS.xlsx" --model-answers-file "P:\Harine_Project\automated_answer_grader\data\reference\model_answers.csv" --output semantic_similarity_output.xlsx
+python run_semantic_similarity.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --output outputs\semantic_similarity_output.xlsx
 ```
 
 To train the first `ai_score` baseline:
 
 ```powershell
-python run_training.py "Synthetic Data - FOR PREPROCESS.xlsx" --model-answers-file "P:\Harine_Project\automated_answer_grader\data\reference\model_answers.csv" --output-dir training_results
+python run_training.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --output-dir outputs\training_results
 ```
 
 The current reference file has model answers for `Q1`, `Q2`, and `Q3`, so training currently uses `36` eligible rows. Add the remaining marking-schema answers to the reference file before treating the metrics as full-dataset results.
@@ -116,7 +116,7 @@ The current reference file has model answers for `Q1`, `Q2`, and `Q3`, so traini
 The core cleaning function is:
 
 ```python
-from preprocessing import clean_text
+from preprocessing.preprocessing import clean_text
 
 cleaned = clean_text(" Ubiquity means the internrt is everywhere [[ and good. ")
 print(cleaned)

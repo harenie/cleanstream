@@ -9,8 +9,11 @@ from pathlib import Path
 import pandas as pd
 
 from model_answers import attach_model_answers
-from preprocessing import load_dataset
-from semantic_similarity import add_semantic_similarity_columns, build_semantic_summary
+from preprocessing.preprocessing import load_dataset
+from semantic_similarity.semantic_similarity import (
+    add_semantic_similarity_columns,
+    build_semantic_summary,
+)
 
 
 def parse_args() -> argparse.Namespace:

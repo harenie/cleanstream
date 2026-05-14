@@ -12,7 +12,7 @@ from concept_coverage import (
     drop_source_model_answer_columns,
     infer_model_answers,
 )
-from preprocessing import clean_text, preprocess_dataframe
+from preprocessing.preprocessing import clean_text, preprocess_dataframe
 
 
 class SemanticSimilarityEngine:
