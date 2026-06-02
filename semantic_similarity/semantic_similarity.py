@@ -6,7 +6,7 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from concept_coverage import (
+from concept_coverage.concept_coverage import (
     choose_model_answer_column,
     choose_student_answer_column,
     drop_source_model_answer_columns,
@@ -28,7 +28,11 @@ class SemanticSimilarityEngine:
         self.fit(corpus or ["empty answer"])
 
     def fit(self, corpus: list[str]) -> None:
-        cleaned = [clean_text(text) for text in corpus if clean_text(text)]
+        cleaned = []
+        for text in corpus:
+            cleaned_text = clean_text(text)
+            if cleaned_text:
+                cleaned.append(cleaned_text)
         if not cleaned:
             cleaned = ["empty answer"]
         self.vectorizer.fit(cleaned)
@@ -100,7 +104,11 @@ def add_semantic_similarity_columns(
     require_model_answer: bool = False,
     similarity_backend: str = "tfidf",
 ) -> pd.DataFrame:
-    """Add model-vs-student semantic similarity columns."""
+    """Add model-vs-student semantic similarity columns.
+
+    TF-IDF is fit on model-answer text only so evaluated student answers do not
+    influence the vocabulary or IDF weights used to score themselves.
+    """
     processed = preprocess_dataframe(dataframe)
     model_answer_column = choose_model_answer_column(processed, model_answer_column)
     model_answers = infer_model_answers(
@@ -126,12 +134,12 @@ def add_semantic_similarity_columns(
     model_answer_values = [model_answers[row[question_id_column]] for _, row in output.iterrows()]
     student_answer_values = output[answer_column].fillna("").astype(str).tolist()
     corpus = [answer for answer in model_answer_values if clean_text(answer)]
-    corpus.extend(student_answer_values)
     engine = build_similarity_engine(similarity_backend, corpus)
 
     output = drop_source_model_answer_columns(output, keep_column=model_answer_column)
     output["model_answer"] = model_answer_values
     output["missing_model_answer"] = [not bool(clean_text(value)) for value in model_answer_values]
+    output["similarity_backend"] = similarity_backend.lower().replace("_", "-")
     output["semantic_similarity_score"] = [
         engine.similarity(model_answer, student_answer)
         for model_answer, student_answer in zip(model_answer_values, student_answer_values)
