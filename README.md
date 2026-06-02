@@ -165,6 +165,18 @@ To use the trained concept coverage model in Module 1:
 python scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --concept-backend trained-llm --concept-model-path models\concept_coverage_model --strict-model-answers --output outputs\module1_features.csv
 ```
 
+To open the simple browser tester for one student answer and one schema/model answer:
+
+```powershell
+python scripts\run_module1_demo_server.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765
+```
+
 Language checks are optional:
 
 ```powershell

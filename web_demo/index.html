@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cleanstream Module 1 Tester</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Cleanstream</p>
+          <h1>Module 1 Tester</h1>
+        </div>
+        <div id="status" class="status">Ready</div>
+      </header>
+
+      <section class="workspace">
+        <form id="moduleForm" class="input-pane">
+          <label class="field">
+            <span>Question</span>
+            <textarea id="question" rows="3">Evaluate the concept of ubiquity as a feature of e-commerce.</textarea>
+          </label>
+
+          <label class="field">
+            <span>Student Answer</span>
+            <textarea id="studentAnswer" rows="7" required>Ubiquity means the internrt is everywhere and customers can shop anytime because the internet is available from many places.</textarea>
+          </label>
+
+          <label class="field">
+            <span>Schema / Model Answer</span>
+            <textarea id="modelAnswer" rows="10" required>- Ubiquity Defined: E-commerce is available anywhere and anytime through internet-connected devices.
+- Consumer Impact: Consumers can shop 24/7 from any location, reducing search time and effort.
+- Business Impact: Businesses need always-on digital infrastructure and fulfilment systems.
+- Marketspace Concept: Ubiquity removes geographic and time limits from commerce.
+- Critical Evaluation: The digital divide can exclude people without reliable internet access.</textarea>
+          </label>
+
+          <div class="action-row">
+            <label class="toggle">
+              <input id="useConceptModel" type="checkbox" checked>
+              <span>Trained concept model</span>
+            </label>
+            <button id="processButton" type="submit">Process</button>
+          </div>
+        </form>
+
+        <section class="result-pane" aria-live="polite">
+          <div class="metrics-grid">
+            <article class="metric">
+              <span>Concept Coverage</span>
+              <strong id="conceptCoverage">-</strong>
+              <div class="meter"><i id="conceptCoverageBar"></i></div>
+            </article>
+            <article class="metric">
+              <span>Semantic Similarity</span>
+              <strong id="semanticSimilarity">-</strong>
+              <div class="meter"><i id="semanticSimilarityBar"></i></div>
+            </article>
+            <article class="metric">
+              <span>Language Quality</span>
+              <strong id="languageQuality">-</strong>
+              <div class="meter"><i id="languageQualityBar"></i></div>
+            </article>
+            <article class="metric">
+              <span>Reasoning</span>
+              <strong id="reasoningQuality">-</strong>
+              <small id="reasoningDetail">-</small>
+            </article>
+          </div>
+
+          <div class="flags">
+            <div>
+              <span>Contradiction</span>
+              <strong id="contradictionFlag">-</strong>
+            </div>
+            <div>
+              <span>Cross Question</span>
+              <strong id="crossQuestionFlag">-</strong>
+            </div>
+            <div>
+              <span>Spelling</span>
+              <strong id="spellingCount">-</strong>
+            </div>
+            <div>
+              <span>Words</span>
+              <strong id="wordCount">-</strong>
+            </div>
+          </div>
+
+          <section class="concept-panel">
+            <h2>Concepts</h2>
+            <div class="concept-columns">
+              <div>
+                <h3>Covered</h3>
+                <ul id="coveredConcepts"></ul>
+              </div>
+              <div>
+                <h3>Partial</h3>
+                <ul id="partialConcepts"></ul>
+              </div>
+              <div>
+                <h3>Missing</h3>
+                <ul id="missingConcepts"></ul>
+              </div>
+            </div>
+          </section>
+
+          <details class="raw-output">
+            <summary>Raw Module 1 Row</summary>
+            <pre id="rawOutput">{}</pre>
+          </details>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
