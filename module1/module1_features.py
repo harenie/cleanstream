@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from concept_coverage.concept_coverage import add_concept_coverage_columns
-from concept_coverage.concepts_reference import DEFAULT_CONCEPT_REFERENCE_PATH
-from language_quality.language_quality import analyze_language_quality
-from preprocessing.preprocessing import clean_text, preprocess_dataframe
-from reasoning.reasoning import assess_reasoning, detect_contradictions, detect_noise
-from semantic_similarity.semantic_similarity import (
+from module1.concept_coverage.concept_coverage import add_concept_coverage_columns
+from module1.concept_coverage.concepts_reference import DEFAULT_CONCEPT_REFERENCE_PATH
+from module1.language_quality.language_quality import analyze_language_quality
+from module1.preprocessing.preprocessing import clean_text, preprocess_dataframe
+from module1.reasoning.reasoning import assess_reasoning, detect_contradictions, detect_noise
+from module1.semantic_similarity.semantic_similarity import (
     add_semantic_similarity_columns,
     build_similarity_engine,
 )

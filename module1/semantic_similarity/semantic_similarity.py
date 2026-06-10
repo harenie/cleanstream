@@ -1,0 +1,163 @@
+"""Semantic similarity features for student answers and model answers."""
+
+from __future__ import annotations
+
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+from module1.concept_coverage.concept_coverage import (
+    choose_model_answer_column,
+    choose_student_answer_column,
+    drop_source_model_answer_columns,
+    infer_model_answers,
+)
+from module1.preprocessing.preprocessing import clean_text, preprocess_dataframe
+
+
+class SemanticSimilarityEngine:
+    """Lightweight semantic baseline using TF-IDF word n-grams."""
+
+    def __init__(self, corpus: list[str] | None = None) -> None:
+        self.vectorizer = TfidfVectorizer(
+            lowercase=True,
+            stop_words="english",
+            ngram_range=(1, 2),
+            min_df=1,
+        )
+        self.fit(corpus or ["empty answer"])
+
+    def fit(self, corpus: list[str]) -> None:
+        cleaned = []
+        for text in corpus:
+            cleaned_text = clean_text(text)
+            if cleaned_text:
+                cleaned.append(cleaned_text)
+        if not cleaned:
+            cleaned = ["empty answer"]
+        self.vectorizer.fit(cleaned)
+
+    def similarity(self, text_a: object, text_b: object) -> float:
+        """Return cosine similarity from 0.0 to 1.0."""
+        a = clean_text(text_a)
+        b = clean_text(text_b)
+        if not a or not b:
+            return 0.0
+
+        vectors = self.vectorizer.transform([a, b])
+        score = cosine_similarity(vectors[0], vectors[1])[0][0]
+        return round(float(score), 4)
+
+
+class SentenceBertSimilarityEngine:
+    """Optional Sentence-BERT similarity engine loaded only when requested."""
+
+    def __init__(
+        self,
+        corpus: list[str] | None = None,
+        model_name: str = "all-MiniLM-L6-v2",
+    ) -> None:
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise ImportError(
+                "Sentence-BERT support requires installing sentence-transformers. "
+                "Use --similarity-backend tfidf for the local baseline."
+            ) from exc
+
+        self.model_name = model_name
+        self.model = SentenceTransformer(model_name)
+
+    def fit(self, corpus: list[str]) -> None:
+        """Sentence-BERT models are pre-trained, so no local fitting is required."""
+
+    def similarity(self, text_a: object, text_b: object) -> float:
+        """Return cosine similarity from 0.0 to 1.0."""
+        a = clean_text(text_a)
+        b = clean_text(text_b)
+        if not a or not b:
+            return 0.0
+
+        vectors = self.model.encode([a, b], normalize_embeddings=True)
+        score = float(vectors[0] @ vectors[1])
+        return round(max(0.0, min(1.0, score)), 4)
+
+
+def build_similarity_engine(
+    backend: str = "tfidf",
+    corpus: list[str] | None = None,
+) -> SemanticSimilarityEngine | SentenceBertSimilarityEngine:
+    """Build the requested semantic similarity engine."""
+    normalized = backend.lower().replace("_", "-")
+    if normalized == "tfidf":
+        return SemanticSimilarityEngine(corpus)
+    if normalized in {"sentence-bert", "sbert"}:
+        return SentenceBertSimilarityEngine(corpus)
+    raise ValueError("similarity backend must be 'tfidf' or 'sentence-bert'")
+
+
+def add_semantic_similarity_columns(
+    dataframe: pd.DataFrame,
+    model_answer_column: str = "model_answer",
+    student_answer_column: str = "synthetic_answer",
+    question_id_column: str = "question_id",
+    require_model_answer: bool = False,
+    similarity_backend: str = "tfidf",
+) -> pd.DataFrame:
+    """Add model-vs-student semantic similarity columns.
+
+    TF-IDF is fit on model-answer text only so evaluated student answers do not
+    influence the vocabulary or IDF weights used to score themselves.
+    """
+    processed = preprocess_dataframe(dataframe)
+    model_answer_column = choose_model_answer_column(processed, model_answer_column)
+    model_answers = infer_model_answers(
+        processed,
+        model_answer_column=model_answer_column,
+        question_id_column=question_id_column,
+        require_model_answer=require_model_answer,
+    )
+
+    output = processed.copy()
+    answer_column = choose_student_answer_column(output, student_answer_column)
+
+    if student_answer_column in output.columns:
+        output = output.rename(columns={student_answer_column: "student_answer"})
+    if f"{student_answer_column}_clean" in output.columns:
+        output = output.rename(columns={f"{student_answer_column}_clean": "student_answer_clean"})
+
+    if answer_column == student_answer_column:
+        answer_column = "student_answer"
+    elif answer_column == f"{student_answer_column}_clean":
+        answer_column = "student_answer_clean"
+
+    model_answer_values = [model_answers[row[question_id_column]] for _, row in output.iterrows()]
+    student_answer_values = output[answer_column].fillna("").astype(str).tolist()
+    corpus = [answer for answer in model_answer_values if clean_text(answer)]
+    engine = build_similarity_engine(similarity_backend, corpus)
+
+    output = drop_source_model_answer_columns(output, keep_column=model_answer_column)
+    output["model_answer"] = model_answer_values
+    output["missing_model_answer"] = [not bool(clean_text(value)) for value in model_answer_values]
+    output["similarity_backend"] = similarity_backend.lower().replace("_", "-")
+    output["semantic_similarity_score"] = [
+        engine.similarity(model_answer, student_answer)
+        for model_answer, student_answer in zip(model_answer_values, student_answer_values)
+    ]
+    output["student_answer_length"] = [len(clean_text(value).split()) for value in student_answer_values]
+    output["model_answer_length"] = [len(clean_text(value).split()) for value in model_answer_values]
+    return output
+
+
+def build_semantic_summary(dataframe: pd.DataFrame) -> dict[str, object]:
+    """Create a compact summary for semantic-similarity output."""
+    eligible = dataframe[~dataframe["missing_model_answer"]]
+    return {
+        "rows": int(len(dataframe)),
+        "eligible_rows": int(len(eligible)),
+        "rows_missing_model_answer": int(dataframe["missing_model_answer"].sum()),
+        "average_semantic_similarity_score": round(
+            float(eligible["semantic_similarity_score"].mean()) if len(eligible) else 0.0,
+            4,
+        ),
+    }
