@@ -10,7 +10,12 @@ from module1.concept_coverage.concept_coverage import add_concept_coverage_colum
 from module1.concept_coverage.concepts_reference import DEFAULT_CONCEPT_REFERENCE_PATH
 from module1.language_quality.language_quality import analyze_language_quality
 from module1.preprocessing.preprocessing import clean_text, preprocess_dataframe
-from module1.reasoning.reasoning import assess_reasoning, detect_contradictions, detect_noise
+from module1.reasoning.reasoning import (
+    assess_reasoning,
+    build_reasoning_predictor,
+    detect_contradictions,
+    detect_noise,
+)
 from module1.semantic_similarity.semantic_similarity import (
     add_semantic_similarity_columns,
     build_similarity_engine,
@@ -26,10 +31,12 @@ def build_module1_features(
     require_model_answer: bool = True,
     similarity_backend: str = "tfidf",
     cross_question_margin: float = 0.05,
+    reasoning_backend: str = "auto",
+    reasoning_model_path: str | Path | None = None,
     language_check_backend: str = "simple",
     apply_language_penalty: bool = False,
     concept_reference_path: str | Path = DEFAULT_CONCEPT_REFERENCE_PATH,
-    concept_backend: str = "weak-score",
+    concept_backend: str = "auto",
     concept_model_path: str | Path | None = None,
     target_score_column: str = "ai_score",
 ) -> pd.DataFrame:
@@ -60,7 +67,20 @@ def build_module1_features(
 
     answer_column = "student_answer_clean" if "student_answer_clean" in output.columns else "student_answer"
     question_values = output["question"] if "question" in output.columns else [""] * len(output)
-    reasoning_values = [assess_reasoning(value) for value in output[answer_column]]
+    reasoning_predictor = build_reasoning_predictor(
+        backend=reasoning_backend,
+        model_path=reasoning_model_path,
+    )
+    reasoning_values = [
+        assess_reasoning(
+            answer,
+            question,
+            backend=reasoning_backend,
+            predictor=reasoning_predictor,
+            model_path=reasoning_model_path,
+        )
+        for answer, question in zip(output[answer_column], question_values)
+    ]
     contradiction_values = [
         detect_contradictions(answer, question)
         for answer, question in zip(output[answer_column], question_values)
@@ -80,6 +100,9 @@ def build_module1_features(
         "reasoning_connective_count",
         "reasoning_connective_density",
         "reasoning_quality_score",
+        "reasoning_backend",
+        "reasoning_model_label",
+        "reasoning_model_confidence",
     ]:
         output[key] = [item[key] for item in reasoning_values]
     for key in [

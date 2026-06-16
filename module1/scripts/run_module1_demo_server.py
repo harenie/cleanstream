@@ -95,7 +95,10 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
     student_answer = str(payload.get("student_answer", "")).strip()
     model_answer = str(payload.get("model_answer", "")).strip()
     question = str(payload.get("question", "")).strip() or "What is the concept?"
-    use_trained_model = bool(payload.get("use_trained_model", True))
+    requested_path = str(payload.get("processing_path", "")).strip().lower()
+    if requested_path not in {"llm", "fallback"}:
+        use_trained_model = bool(payload.get("use_trained_model", True))
+        requested_path = "llm" if use_trained_model else "fallback"
 
     if not student_answer:
         raise ValueError("Student answer is required.")
@@ -124,39 +127,27 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
     if concepts.empty:
         raise ValueError("Schema / model answer must contain at least one concept or sentence.")
 
-    concept_backend = "trained-llm" if use_trained_model and MODEL_PATH.exists() else "weak-score"
-    fallback_reason = ""
+    concept_backend = "trained-llm" if requested_path == "llm" else "weak-score"
+    reasoning_backend = "trained-llm" if requested_path == "llm" else "rule-based"
     with tempfile.TemporaryDirectory(prefix="cleanstream_module1_demo_") as temp_dir:
         concept_reference = Path(temp_dir) / "concepts.csv"
         concepts.to_csv(concept_reference, index=False)
-        try:
-            output = build_module1_features(
-                dataframe,
-                model_answer_column="scheme",
-                student_answer_column="synthetic_answer",
-                concept_reference_path=concept_reference,
-                concept_backend=concept_backend,
-                concept_model_path=MODEL_PATH,
-                language_check_backend="simple",
-                require_model_answer=True,
-            )
-        except (FileNotFoundError, ImportError) as exc:
-            if concept_backend != "trained-llm":
-                raise
-            fallback_reason = str(exc)
-            output = build_module1_features(
-                dataframe,
-                model_answer_column="scheme",
-                student_answer_column="synthetic_answer",
-                concept_reference_path=concept_reference,
-                concept_backend="weak-score",
-                language_check_backend="simple",
-                require_model_answer=True,
-            )
+        output = build_module1_features(
+            dataframe,
+            model_answer_column="scheme",
+            student_answer_column="synthetic_answer",
+            concept_reference_path=concept_reference,
+            concept_backend=concept_backend,
+            concept_model_path=MODEL_PATH,
+            reasoning_backend=reasoning_backend,
+            reasoning_model_path=MODEL_PATH,
+            language_check_backend="simple",
+            require_model_answer=True,
+        )
 
     row = normalize_for_json(output.iloc[0].to_dict())
     return {
-        "summary": build_result_summary(row, fallback_reason),
+        "summary": build_result_summary(row),
         "concepts": {
             "present": split_concept_cell(row.get("concepts_present")),
             "partial": split_concept_cell(row.get("concepts_partial")),
@@ -166,12 +157,15 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
     }
 
 
-def build_result_summary(row: dict[str, object], fallback_reason: str) -> dict[str, object]:
+def build_result_summary(row: dict[str, object]) -> dict[str, object]:
     return {
+        "processing_path": "llm" if row.get("concept_backend") == "trained-llm" else "fallback",
         "concept_backend": row.get("concept_backend"),
-        "concept_fallback_reason": fallback_reason,
         "concept_coverage_ratio": row.get("concept_coverage_ratio"),
         "semantic_similarity_score": row.get("semantic_similarity_score"),
+        "reasoning_backend": row.get("reasoning_backend"),
+        "reasoning_model_label": row.get("reasoning_model_label"),
+        "reasoning_model_confidence": row.get("reasoning_model_confidence"),
         "reasoning_quality": row.get("reasoning_quality"),
         "reasoning_connective_count": row.get("reasoning_connective_count"),
         "contradiction_check_applied": row.get("contradiction_check_applied"),

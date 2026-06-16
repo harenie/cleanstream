@@ -38,9 +38,9 @@
           </label>
 
           <div class="action-row">
-            <label class="toggle">
-              <input id="useConceptModel" type="checkbox" checked>
-              <span>Trained concept model</span>
+            <label class="toggle path-toggle">
+              <input id="useLlmPath" type="checkbox" checked>
+              <span id="pathModeLabel">LLM path</span>
             </label>
             <button id="processButton" type="submit">Process</button>
           </div>
@@ -86,6 +86,14 @@
             <div>
               <span>Words</span>
               <strong id="wordCount">-</strong>
+            </div>
+            <div>
+              <span>Concept Backend</span>
+              <strong id="conceptBackend">-</strong>
+            </div>
+            <div>
+              <span>Reasoning Backend</span>
+              <strong id="reasoningBackend">-</strong>
             </div>
           </div>
 

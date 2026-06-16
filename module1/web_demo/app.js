@@ -1,6 +1,8 @@
 const form = document.querySelector("#moduleForm");
 const statusBox = document.querySelector("#status");
 const processButton = document.querySelector("#processButton");
+const pathToggle = document.querySelector("#useLlmPath");
+const pathModeLabel = document.querySelector("#pathModeLabel");
 
 const fields = {
   conceptCoverage: document.querySelector("#conceptCoverage"),
@@ -12,6 +14,8 @@ const fields = {
   crossQuestionFlag: document.querySelector("#crossQuestionFlag"),
   spellingCount: document.querySelector("#spellingCount"),
   wordCount: document.querySelector("#wordCount"),
+  conceptBackend: document.querySelector("#conceptBackend"),
+  reasoningBackend: document.querySelector("#reasoningBackend"),
   conceptCoverageBar: document.querySelector("#conceptCoverageBar"),
   semanticSimilarityBar: document.querySelector("#semanticSimilarityBar"),
   languageQualityBar: document.querySelector("#languageQualityBar"),
@@ -30,7 +34,7 @@ form.addEventListener("submit", async (event) => {
     question: document.querySelector("#question").value,
     student_answer: document.querySelector("#studentAnswer").value,
     model_answer: document.querySelector("#modelAnswer").value,
-    use_trained_model: document.querySelector("#useConceptModel").checked,
+    processing_path: pathToggle.checked ? "llm" : "fallback",
   };
 
   try {
@@ -53,6 +57,9 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+pathToggle.addEventListener("change", updatePathModeLabel);
+updatePathModeLabel();
+
 function renderResult(result) {
   const summary = result.summary;
   const conceptCoverage = numberValue(summary.concept_coverage_ratio);
@@ -63,11 +70,13 @@ function renderResult(result) {
   fields.semanticSimilarity.textContent = formatScore(semanticSimilarity);
   fields.languageQuality.textContent = formatScore(languageQuality);
   fields.reasoningQuality.textContent = titleCase(summary.reasoning_quality || "-");
-  fields.reasoningDetail.textContent = `${summary.reasoning_connective_count ?? 0} markers`;
+  fields.reasoningDetail.textContent = formatReasoningDetail(summary);
   fields.contradictionFlag.textContent = formatFlag(summary.contradiction_detected);
   fields.crossQuestionFlag.textContent = formatFlag(summary.cross_question_flag);
   fields.spellingCount.textContent = String(summary.spelling_error_count ?? 0);
   fields.wordCount.textContent = String(summary.answer_word_count ?? 0);
+  fields.conceptBackend.textContent = formatBackend(summary.concept_backend);
+  fields.reasoningBackend.textContent = formatBackend(summary.reasoning_backend);
 
   setMeter(fields.conceptCoverageBar, conceptCoverage);
   setMeter(fields.semanticSimilarityBar, semanticSimilarity);
@@ -113,6 +122,20 @@ function formatFlag(value) {
   return value ? "Yes" : "No";
 }
 
+function formatBackend(value) {
+  return String(value || "-").replace("-", " ");
+}
+
+function formatReasoningDetail(summary) {
+  const markerText = `${summary.reasoning_connective_count ?? 0} markers`;
+  if (!summary.reasoning_model_label) {
+    return markerText;
+  }
+  const confidence = Number(summary.reasoning_model_confidence);
+  const confidenceText = Number.isFinite(confidence) ? ` ${confidence.toFixed(3)}` : "";
+  return `${summary.reasoning_model_label}${confidenceText} · ${markerText}`;
+}
+
 function titleCase(value) {
   return String(value).replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 }
@@ -120,4 +143,8 @@ function titleCase(value) {
 function setStatus(text, state) {
   statusBox.textContent = text;
   statusBox.className = `status ${state || ""}`.trim();
+}
+
+function updatePathModeLabel() {
+  pathModeLabel.textContent = pathToggle.checked ? "LLM path" : "Fallback path";
 }

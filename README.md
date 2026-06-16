@@ -44,7 +44,7 @@ The concept coverage step:
 
 - compares each `student_answer` against predefined expected concepts from `data/reference/concepts.csv`
 - uses a trainable transformer classifier to label each concept as `missing`, `partial`, or `covered`
-- provides a `weak-score` bootstrap backend before human concept-level labels are available
+- uses `auto` mode by default, which tries the DistilBERT concept model first and falls back to the `weak-score` bootstrap backend only when the model or dependencies are unavailable
 - renames the dataset's student-answer field to `student_answer` in the concept output
 - removes raw `generated_answer` columns from the concept output
 - adds `model_answer`, `missing_model_answer`, `concepts`, `concepts_present`, `concepts_partial`, `concepts_missing`, `concept_prediction_details`, and `concepts_covered_ratio`
@@ -61,8 +61,8 @@ The semantic similarity step:
 The full Module 1 pipeline:
 
 - combines concept coverage, semantic similarity, reasoning quality, scoped contradiction checks, language-quality indicators, and cross-question relevance flags
-- treats reasoning quality as a rule-based signal from explicit explanation markers, not a final reasoning judge
-- can run locally with `weak-score` concept coverage, or use the optional trained transformer concept model with `--concept-backend trained-llm`
+- supports DistilBERT-backed reasoning quality by reusing the concept coverage model, with a rule-based fallback from explicit explanation markers
+- uses the trained DistilBERT model first for concept coverage and reasoning when available, with rule/weak-score fallbacks for local robustness
 - does not train the final scoring model; score prediction belongs to Module 2
 
 The first training baseline:
@@ -156,13 +156,19 @@ python module1\scripts\run_semantic_similarity.py "data\raw\synthetic_dataset.xl
 To build the full Module 1 feature file with lightweight language-quality checks:
 
 ```powershell
-python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --strict-model-answers --output module1\outputs\module1_features.csv
+python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --strict-model-answers --output module1\generated_outputs\module1_features.csv
 ```
 
-To use the trained concept coverage model in Module 1:
+To force the trained concept coverage model in Module 1:
 
 ```powershell
-python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --concept-backend trained-llm --concept-model-path module1\models\concept_coverage_model --strict-model-answers --output module1\outputs\module1_features.csv
+python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --concept-backend trained-llm --concept-model-path module1\models\concept_coverage_model --strict-model-answers --output module1\generated_outputs\module1_features.csv
+```
+
+To force DistilBERT-backed reasoning quality as well:
+
+```powershell
+python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --reasoning-backend trained-llm --reasoning-model-path module1\models\concept_coverage_model --strict-model-answers --output module1\generated_outputs\module1_features.csv
 ```
 
 To open the simple browser tester for one student answer and one schema/model answer:
@@ -180,15 +186,15 @@ http://127.0.0.1:8765
 Language checks are optional:
 
 ```powershell
-python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --language-check none --output module1\outputs\module1_features.csv
-python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --language-check simple --apply-language-penalty --output module1\outputs\module1_features.csv
+python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --language-check none --output module1\generated_outputs\module1_features.csv
+python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --language-check simple --apply-language-penalty --output module1\generated_outputs\module1_features.csv
 ```
 
 For stronger LanguageTool checks, install optional dependencies first:
 
 ```powershell
 pip install -r requirements-optional.txt
-python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --language-check languagetool --output module1\outputs\module1_features.csv
+python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --language-check languagetool --output module1\generated_outputs\module1_features.csv
 ```
 
 To train the first `ai_score` baseline:

@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("module1/outputs/module1_features.csv"),
+        default=Path("module1/generated_outputs/module1_features.csv"),
         help="Output .csv or .xlsx path.",
     )
     parser.add_argument(
@@ -63,9 +63,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--concept-backend",
-        choices=["weak-score", "trained-llm"],
-        default="weak-score",
-        help="Concept coverage backend.",
+        choices=["auto", "weak-score", "trained-llm"],
+        default="auto",
+        help=(
+            "Concept coverage backend. Auto uses the DistilBERT model when "
+            "available and falls back to weak-score."
+        ),
     )
     parser.add_argument(
         "--concept-model-path",
@@ -83,6 +86,21 @@ def parse_args() -> argparse.Namespace:
         choices=["tfidf", "sentence-bert"],
         default="tfidf",
         help="Semantic similarity backend.",
+    )
+    parser.add_argument(
+        "--reasoning-backend",
+        choices=["auto", "rule-based", "trained-llm"],
+        default="auto",
+        help=(
+            "Reasoning quality backend. Auto reuses the DistilBERT concept model "
+            "when available and falls back to rule-based markers."
+        ),
+    )
+    parser.add_argument(
+        "--reasoning-model-path",
+        type=Path,
+        default=Path("module1/models/concept_coverage_model"),
+        help="Path to the DistilBERT model reused for reasoning quality.",
     )
     parser.add_argument(
         "--language-check",
@@ -123,6 +141,8 @@ def main() -> None:
         max_concepts=args.max_concepts,
         require_model_answer=args.strict_model_answers,
         similarity_backend=args.similarity_backend,
+        reasoning_backend=args.reasoning_backend,
+        reasoning_model_path=args.reasoning_model_path,
         language_check_backend=args.language_check,
         apply_language_penalty=args.apply_language_penalty,
         concept_reference_path=args.concept_reference,

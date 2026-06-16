@@ -25,7 +25,7 @@ def add_concept_coverage_columns(
     max_concepts: int = 20,
     require_model_answer: bool = False,
     concept_reference_path: str | Path = DEFAULT_CONCEPT_REFERENCE_PATH,
-    concept_backend: str = "weak-score",
+    concept_backend: str = "auto",
     concept_model_path: str | Path | None = None,
     target_score_column: str = "ai_score",
 ) -> pd.DataFrame:
@@ -123,11 +123,19 @@ def build_concept_predictor(
     normalized = concept_backend.lower().replace("_", "-")
     if normalized in {"weak-score", "weak"}:
         return WeakScoreConceptCoveragePredictor(target_score_column=target_score_column)
-    if normalized in {"trained-llm", "llm", "transformer"}:
-        if concept_model_path is None:
-            concept_model_path = Path("module1") / "models" / "concept_coverage_model"
-        return ConceptCoveragePredictor(concept_model_path)
-    raise ValueError("concept_backend must be 'weak-score' or 'trained-llm'")
+    if normalized in {"auto", "trained-llm", "llm", "transformer", "distilbert"}:
+        resolved_model_path = (
+            Path(concept_model_path)
+            if concept_model_path is not None
+            else Path("module1") / "models" / "concept_coverage_model"
+        )
+        try:
+            return ConceptCoveragePredictor(resolved_model_path)
+        except (FileNotFoundError, ImportError):
+            if normalized == "auto":
+                return WeakScoreConceptCoveragePredictor(target_score_column=target_score_column)
+            raise
+    raise ValueError("concept_backend must be 'auto', 'weak-score', or 'trained-llm'")
 
 
 def summarize_concept_predictions(predictions: list[dict[str, object]]) -> dict[str, object]:

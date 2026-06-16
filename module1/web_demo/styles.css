@@ -171,6 +171,10 @@ textarea:focus {
   accent-color: var(--accent);
 }
 
+.path-toggle {
+  min-width: 164px;
+}
+
 button {
   min-width: 112px;
   min-height: 40px;

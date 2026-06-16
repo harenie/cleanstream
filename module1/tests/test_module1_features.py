@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from module1.concept_coverage import concept_coverage
+from module1.concept_coverage.concept_coverage import build_concept_predictor
 from module1.module1_features import build_module1_features
 from module1.reasoning.reasoning import assess_reasoning, detect_contradictions
 from module1.semantic_similarity import semantic_similarity as semantic_module
@@ -33,6 +35,40 @@ def test_semantic_similarity_fits_reference_answers_only(monkeypatch):
     assert output["semantic_similarity_score"].between(0.0, 1.0).all()
 
 
+def test_concept_backend_auto_uses_trained_model_when_available(monkeypatch):
+    class FakeConceptPredictor:
+        backend_name = "trained-llm"
+
+        def __init__(self, model_path):
+            self.model_path = model_path
+
+    monkeypatch.setattr(concept_coverage, "ConceptCoveragePredictor", FakeConceptPredictor)
+
+    predictor = build_concept_predictor(
+        concept_backend="auto",
+        concept_model_path="module1/models/concept_coverage_model",
+        target_score_column="ai_score",
+    )
+
+    assert predictor.backend_name == "trained-llm"
+
+
+def test_concept_backend_auto_falls_back_to_weak_score(monkeypatch):
+    class MissingConceptPredictor:
+        def __init__(self, model_path):
+            raise FileNotFoundError("missing model")
+
+    monkeypatch.setattr(concept_coverage, "ConceptCoveragePredictor", MissingConceptPredictor)
+
+    predictor = build_concept_predictor(
+        concept_backend="auto",
+        concept_model_path="missing-model",
+        target_score_column="ai_score",
+    )
+
+    assert predictor.backend_name == "weak-score"
+
+
 def test_reasoning_connectives_do_not_match_inside_words():
     result = assess_reasoning("A software solution can support online commerce.")
 
@@ -49,6 +85,29 @@ def test_reasoning_quality_detects_explicit_explanation_markers():
     assert result["reasoning_quality"] == "good"
     assert result["reasoning_connective_count"] == 3
     assert result["reasoning_connective_density"] > 0
+
+
+def test_reasoning_can_use_trained_llm_style_predictor():
+    class FakeReasoningPredictor:
+        backend_name = "trained-llm"
+
+        def predict_prompt(self, prompt: str) -> tuple[str, float]:
+            assert "Expected Concept:" in prompt
+            assert "reasoning quality concept" in prompt
+            return "covered", 0.91
+
+    result = assess_reasoning(
+        "The answer explains the result because the cause changes demand.",
+        "Explain the business impact.",
+        backend="trained-llm",
+        predictor=FakeReasoningPredictor(),
+    )
+
+    assert result["reasoning_quality"] == "good"
+    assert result["reasoning_quality_score"] == 1.0
+    assert result["reasoning_backend"] == "trained-llm"
+    assert result["reasoning_model_label"] == "covered"
+    assert result["reasoning_model_confidence"] == 0.91
 
 
 def test_contradiction_detection_is_scoped_by_question_type():
@@ -112,6 +171,7 @@ def test_full_module1_feature_pipeline_smoke(tmp_path):
         student_answer_column="synthetic_answer",
         concept_reference_path=concept_reference,
         concept_backend="weak-score",
+        reasoning_backend="rule-based",
         language_check_backend="simple",
         require_model_answer=True,
     )
