@@ -32,6 +32,7 @@ form.addEventListener("submit", async (event) => {
 
   const payload = {
     question: document.querySelector("#question").value,
+    reasoning_requirement: document.querySelector("#reasoningRequirement").value,
     student_answer: document.querySelector("#studentAnswer").value,
     model_answer: document.querySelector("#modelAnswer").value,
     processing_path: pathToggle.checked ? "llm" : "fallback",
@@ -123,21 +124,29 @@ function formatFlag(value) {
 }
 
 function formatBackend(value) {
-  return String(value || "-").replace("-", " ");
+  return titleCase(String(value || "-").replace(/[-_]/g, " "));
 }
 
 function formatReasoningDetail(summary) {
   const markerText = `${summary.reasoning_connective_count ?? 0} markers`;
+  if (summary.reasoning_required === false) {
+    return summary.reasoning_skip_reason || `Not required · ${markerText}`;
+  }
+  const expectedType = summary.reasoning_expected_type
+    ? `${titleCase(String(summary.reasoning_expected_type).replace(/_/g, " "))} · `
+    : "";
   if (!summary.reasoning_model_label) {
-    return markerText;
+    return `${expectedType}${markerText}`;
   }
   const confidence = Number(summary.reasoning_model_confidence);
   const confidenceText = Number.isFinite(confidence) ? ` ${confidence.toFixed(3)}` : "";
-  return `${summary.reasoning_model_label}${confidenceText} · ${markerText}`;
+  return `${expectedType}${summary.reasoning_model_label}${confidenceText} · ${markerText}`;
 }
 
 function titleCase(value) {
-  return String(value).replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 }
 
 function setStatus(text, state) {

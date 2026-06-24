@@ -103,6 +103,12 @@ def parse_args() -> argparse.Namespace:
         help="Path to the DistilBERT model reused for reasoning quality.",
     )
     parser.add_argument(
+        "--question-requirements",
+        type=Path,
+        default=Path("data/reference/question_requirements.csv"),
+        help="CSV/XLSX file that marks whether each question requires reasoning.",
+    )
+    parser.add_argument(
         "--language-check",
         choices=["none", "simple", "languagetool"],
         default="simple",
@@ -143,6 +149,7 @@ def main() -> None:
         similarity_backend=args.similarity_backend,
         reasoning_backend=args.reasoning_backend,
         reasoning_model_path=args.reasoning_model_path,
+        question_requirements_path=args.question_requirements,
         language_check_backend=args.language_check,
         apply_language_penalty=args.apply_language_penalty,
         concept_reference_path=args.concept_reference,
@@ -178,6 +185,8 @@ def build_summary(dataframe: pd.DataFrame) -> dict[str, object]:
             float(dataframe["language_quality_score"].mean()),
             4,
         ),
+        "rows_reasoning_required": int(dataframe["reasoning_required"].sum()),
+        "rows_reasoning_not_required": int((~dataframe["reasoning_required"]).sum()),
         "rows_with_language_errors": int((dataframe["language_error_count"] > 0).sum()),
         "rows_with_contradictions": int(dataframe["contradiction_detected"].sum()),
         "rows_cross_question_flagged": int(dataframe["cross_question_flag"].sum()),

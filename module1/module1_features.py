@@ -11,10 +11,13 @@ from module1.concept_coverage.concepts_reference import DEFAULT_CONCEPT_REFERENC
 from module1.language_quality.language_quality import analyze_language_quality
 from module1.preprocessing.preprocessing import clean_text, preprocess_dataframe
 from module1.reasoning.reasoning import (
+    DEFAULT_QUESTION_REQUIREMENTS_PATH,
     assess_reasoning,
     build_reasoning_predictor,
     detect_contradictions,
     detect_noise,
+    load_question_requirements,
+    resolve_question_requirement,
 )
 from module1.semantic_similarity.semantic_similarity import (
     add_semantic_similarity_columns,
@@ -33,6 +36,7 @@ def build_module1_features(
     cross_question_margin: float = 0.05,
     reasoning_backend: str = "auto",
     reasoning_model_path: str | Path | None = None,
+    question_requirements_path: str | Path = DEFAULT_QUESTION_REQUIREMENTS_PATH,
     language_check_backend: str = "simple",
     apply_language_penalty: bool = False,
     concept_reference_path: str | Path = DEFAULT_CONCEPT_REFERENCE_PATH,
@@ -67,20 +71,35 @@ def build_module1_features(
 
     answer_column = "student_answer_clean" if "student_answer_clean" in output.columns else "student_answer"
     question_values = output["question"] if "question" in output.columns else [""] * len(output)
+    question_requirements = load_question_requirements(question_requirements_path)
     reasoning_predictor = build_reasoning_predictor(
         backend=reasoning_backend,
         model_path=reasoning_model_path,
     )
-    reasoning_values = [
-        assess_reasoning(
-            answer,
-            question,
-            backend=reasoning_backend,
-            predictor=reasoning_predictor,
-            model_path=reasoning_model_path,
+    reasoning_values = []
+    for answer, question, question_id in zip(
+        output[answer_column],
+        question_values,
+        output[question_id_column],
+    ):
+        requirement = resolve_question_requirement(
+            question_id=question_id,
+            question=question,
+            requirements_by_question=question_requirements,
         )
-        for answer, question in zip(output[answer_column], question_values)
-    ]
+        reasoning_values.append(
+            assess_reasoning(
+                answer,
+                question,
+                backend=reasoning_backend,
+                predictor=reasoning_predictor,
+                model_path=reasoning_model_path,
+                reasoning_required=bool(requirement["reasoning_required"]),
+                reasoning_expected_type=str(requirement["reasoning_expected_type"]),
+                reasoning_requirement_source=str(requirement["reasoning_requirement_source"]),
+                reasoning_skip_reason=str(requirement["reasoning_skip_reason"]),
+            )
+        )
     contradiction_values = [
         detect_contradictions(answer, question)
         for answer, question in zip(output[answer_column], question_values)
@@ -96,6 +115,10 @@ def build_module1_features(
     ]
 
     for key in [
+        "reasoning_required",
+        "reasoning_expected_type",
+        "reasoning_requirement_source",
+        "reasoning_skip_reason",
         "reasoning_quality",
         "reasoning_connective_count",
         "reasoning_connective_density",

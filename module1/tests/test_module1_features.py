@@ -87,6 +87,23 @@ def test_reasoning_quality_detects_explicit_explanation_markers():
     assert result["reasoning_connective_density"] > 0
 
 
+def test_reasoning_skips_when_question_does_not_require_it():
+    result = assess_reasoning(
+        "An ERP implementation challenge is user resistance.",
+        "Identify four ERP implementation challenges.",
+        reasoning_required=False,
+        reasoning_expected_type="not_required",
+        reasoning_requirement_source="question_requirements",
+        reasoning_skip_reason="Identify only question can be answered as a list.",
+    )
+
+    assert result["reasoning_required"] is False
+    assert result["reasoning_quality"] == "not_applicable"
+    assert result["reasoning_quality_score"] is None
+    assert result["reasoning_backend"] == "not-required"
+    assert result["reasoning_skip_reason"] == "Identify only question can be answered as a list."
+
+
 def test_reasoning_can_use_trained_llm_style_predictor():
     class FakeReasoningPredictor:
         backend_name = "trained-llm"
@@ -128,6 +145,7 @@ def test_contradiction_detection_is_scoped_by_question_type():
 
 def test_full_module1_feature_pipeline_smoke(tmp_path):
     concept_reference = tmp_path / "concepts.csv"
+    question_requirements = tmp_path / "question_requirements.csv"
     pd.DataFrame(
         [
             {
@@ -146,6 +164,22 @@ def test_full_module1_feature_pipeline_smoke(tmp_path):
             },
         ]
     ).to_csv(concept_reference, index=False)
+    pd.DataFrame(
+        [
+            {
+                "question_id": "Q1",
+                "reasoning_required": True,
+                "reasoning_expected_type": "descriptive_explanation",
+                "reasoning_notes": "Requires explanation.",
+            },
+            {
+                "question_id": "Q2",
+                "reasoning_required": False,
+                "reasoning_expected_type": "not_required",
+                "reasoning_notes": "Definition only.",
+            },
+        ]
+    ).to_csv(question_requirements, index=False)
     dataframe = pd.DataFrame(
         [
             {
@@ -172,6 +206,7 @@ def test_full_module1_feature_pipeline_smoke(tmp_path):
         concept_reference_path=concept_reference,
         concept_backend="weak-score",
         reasoning_backend="rule-based",
+        question_requirements_path=question_requirements,
         language_check_backend="simple",
         require_model_answer=True,
     )
@@ -183,6 +218,10 @@ def test_full_module1_feature_pipeline_smoke(tmp_path):
         "concept_coverage_ratio",
         "similarity_backend",
         "semantic_similarity_score",
+        "reasoning_required",
+        "reasoning_expected_type",
+        "reasoning_requirement_source",
+        "reasoning_skip_reason",
         "reasoning_quality",
         "reasoning_connective_density",
         "contradiction_check_applied",
@@ -195,3 +234,4 @@ def test_full_module1_feature_pipeline_smoke(tmp_path):
     assert output["missing_model_answer"].eq(False).all()
     assert output["semantic_similarity_score"].between(0.0, 1.0).all()
     assert output["concept_coverage_ratio"].between(0.0, 1.0).all()
+    assert output.loc[output["question_id"] == "Q2", "reasoning_quality"].iloc[0] == "not_applicable"

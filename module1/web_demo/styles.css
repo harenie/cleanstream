@@ -27,6 +27,7 @@ body {
 
 button,
 textarea,
+select,
 input {
   font: inherit;
 }
@@ -143,7 +144,17 @@ textarea {
   line-height: 1.45;
 }
 
-textarea:focus {
+select {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fffefa;
+  color: var(--ink);
+}
+
+textarea:focus,
+select:focus {
   outline: 2px solid rgba(23, 107, 99, 0.22);
   border-color: var(--accent);
 }

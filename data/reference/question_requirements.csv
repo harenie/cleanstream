@@ -1,0 +1,61 @@
+question_id,reasoning_required,reasoning_expected_type,reasoning_notes
+Q1,true,critical_evaluation,Evaluates concept impact and limitations.
+Q2,true,critical_evaluation,Requires implications for consumers and businesses.
+Q3,true,comparative_reasoning,Compares two revenue models and evaluates them.
+Q4,true,comparative_reasoning,Compares e-commerce models with examples and strengths.
+Q5,true,critical_evaluation,Assesses cost structure differences and industry impact.
+Q6,true,critical_evaluation,Explains benefits and drawbacks of disintermediation.
+Q7,true,critical_evaluation,Evaluates strategic role using features and examples.
+Q8,true,critical_evaluation,Evaluates growth significance and supporting services.
+Q9,true,critical_evaluation,Explains platform value creation and challenges.
+Q10,true,critical_evaluation,Evaluates challenges and presence map role.
+Q11,true,descriptive_explanation,Explains value added by each knowledge dimension.
+Q12,true,critical_evaluation,Distinguishes knowledge types and assesses challenge.
+Q13,true,critical_evaluation,Assesses value chain stages and contributions.
+Q14,true,critical_evaluation,Evaluates ECM role functions and limitations.
+Q15,true,critical_evaluation,Assesses LMS purpose value and support.
+Q16,true,critical_evaluation,Evaluates knowledge workers and system requirements.
+Q17,true,comparative_reasoning,Compares expert systems and case based reasoning.
+Q18,true,critical_evaluation,Evaluates techniques with examples and limitations.
+Q19,true,critical_evaluation,Evaluates communities of practice effectiveness.
+Q20,true,critical_evaluation,Evaluates challenges and strategies.
+Q21,false,not_required,Definition and list style answer does not require reasoning.
+Q22,true,descriptive_explanation,Briefly explains strategic objectives.
+Q23,true,comparative_reasoning,Distinguishes data and information with example.
+Q24,true,descriptive_explanation,Explains four information system functions.
+Q25,true,descriptive_explanation,Discusses three information system dimensions.
+Q26,true,causal_explanation,Explains why complementary assets are important.
+Q27,false,not_required,Identify only question can be answered as a list.
+Q28,true,causal_explanation,Explains how tools reduce communication gaps.
+Q29,false,not_required,Describe with examples question does not require reasoning.
+Q30,true,descriptive_explanation,Explains three functional levels.
+Q31,true,descriptive_explanation,Explains levels and gives examples.
+Q32,true,causal_explanation,Discusses how operational systems support decisions.
+Q33,false,not_required,Identify and describe functions can be answered descriptively.
+Q34,true,comparative_reasoning,Distinguishes synchronous and asynchronous tools.
+Q35,true,causal_explanation,Explains how ERP eliminates silos.
+Q36,true,causal_explanation,Analyzes hierarchy impact.
+Q37,true,causal_explanation,Explains how internet reduces global operating cost.
+Q38,true,descriptive_explanation,Explains time shifting and space shifting.
+Q39,true,causal_explanation,Identifies challenges and explains IS quality support.
+Q40,true,causal_explanation,Discusses why assets are necessary for remote work.
+Q41,true,critical_evaluation,Evaluates mutual influence with mediating factors.
+Q42,true,critical_evaluation,Evaluates disruptive technology and mover strategies.
+Q43,true,critical_evaluation,Evaluates five forces and IS responses.
+Q44,true,critical_evaluation,Explains competitive positioning across activities.
+Q45,true,critical_evaluation,Evaluates value web and strategic advantage.
+Q46,true,critical_evaluation,Explains transaction cost theory and structure.
+Q47,true,critical_evaluation,Evaluates three IS enabled advantage approaches.
+Q48,true,critical_evaluation,Evaluates organizational and behavioral impacts.
+Q49,true,critical_evaluation,Evaluates strategic sustainability challenges.
+Q50,true,critical_evaluation,Evaluates internet transformation using frameworks.
+Q51,true,critical_evaluation,Evaluates ERP value and justifies with examples.
+Q52,true,critical_evaluation,Evaluates operational and strategic business value.
+Q53,true,critical_evaluation,Explains bullwhip effect and evaluates IS mitigation.
+Q54,true,comparative_reasoning,Compares push and pull supply chain conditions.
+Q55,true,critical_evaluation,Evaluates global supply chain transformation and remaining challenges.
+Q56,true,comparative_reasoning,Compares CRM types and relationship contribution.
+Q57,true,critical_evaluation,Evaluates CRM business value for a bank.
+Q58,true,critical_evaluation,Evaluates enterprise application implementation challenges.
+Q59,true,critical_evaluation,Evaluates next generation enterprise application improvements.
+Q60,true,critical_evaluation,Evaluates two CRM outcomes for restaurants.

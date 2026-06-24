@@ -96,9 +96,12 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
     model_answer = str(payload.get("model_answer", "")).strip()
     question = str(payload.get("question", "")).strip() or "What is the concept?"
     requested_path = str(payload.get("processing_path", "")).strip().lower()
+    reasoning_requirement = str(payload.get("reasoning_requirement", "auto")).strip().lower()
     if requested_path not in {"llm", "fallback"}:
         use_trained_model = bool(payload.get("use_trained_model", True))
         requested_path = "llm" if use_trained_model else "fallback"
+    if reasoning_requirement not in {"auto", "required", "not_required"}:
+        reasoning_requirement = "auto"
 
     if not student_answer:
         raise ValueError("Student answer is required.")
@@ -131,7 +134,23 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
     reasoning_backend = "trained-llm" if requested_path == "llm" else "rule-based"
     with tempfile.TemporaryDirectory(prefix="cleanstream_module1_demo_") as temp_dir:
         concept_reference = Path(temp_dir) / "concepts.csv"
+        question_requirements = Path(temp_dir) / "question_requirements.csv"
         concepts.to_csv(concept_reference, index=False)
+        if reasoning_requirement != "auto":
+            pd.DataFrame(
+                [
+                    {
+                        "question_id": "DEMO_Q1",
+                        "reasoning_required": reasoning_requirement == "required",
+                        "reasoning_expected_type": (
+                            "descriptive_explanation"
+                            if reasoning_requirement == "required"
+                            else "not_required"
+                        ),
+                        "reasoning_notes": "Selected in the Module 1 demo.",
+                    }
+                ]
+            ).to_csv(question_requirements, index=False)
         output = build_module1_features(
             dataframe,
             model_answer_column="scheme",
@@ -141,6 +160,7 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
             concept_model_path=MODEL_PATH,
             reasoning_backend=reasoning_backend,
             reasoning_model_path=MODEL_PATH,
+            question_requirements_path=question_requirements,
             language_check_backend="simple",
             require_model_answer=True,
         )
@@ -164,6 +184,10 @@ def build_result_summary(row: dict[str, object]) -> dict[str, object]:
         "concept_coverage_ratio": row.get("concept_coverage_ratio"),
         "semantic_similarity_score": row.get("semantic_similarity_score"),
         "reasoning_backend": row.get("reasoning_backend"),
+        "reasoning_required": row.get("reasoning_required"),
+        "reasoning_expected_type": row.get("reasoning_expected_type"),
+        "reasoning_requirement_source": row.get("reasoning_requirement_source"),
+        "reasoning_skip_reason": row.get("reasoning_skip_reason"),
         "reasoning_model_label": row.get("reasoning_model_label"),
         "reasoning_model_confidence": row.get("reasoning_model_confidence"),
         "reasoning_quality": row.get("reasoning_quality"),

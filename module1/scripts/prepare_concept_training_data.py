@@ -58,17 +58,27 @@ def main() -> None:
     processed = preprocess_dataframe(dataframe)
     concepts_by_question = load_concepts_by_question(args.concept_reference)
 
+    import random
+    random.seed(42)
+    all_question_ids = list(concepts_by_question.keys())
+
     rows: list[dict[str, object]] = []
     answer_column = choose_answer_column(processed, args.student_answer_column)
     for _, row in processed.iterrows():
         question_id = str(row[args.question_id_column])
         concepts = concepts_by_question.get(question_id, [])
-        label = weak_label_from_score(row.get(args.target_score_column))
+        student_ans = str(row[answer_column])
+        
+        # 1. Process positive concepts
         for concept in concepts:
+            concept_text = str(concept["concept_text"])
+            overlap = compute_token_overlap(student_ans, concept_text)
+            label = label_from_overlap_and_score(row.get(args.target_score_column), overlap)
+            
             prompt = build_model_input(
                 question=str(row.get("question", "")),
-                student_answer=str(row[answer_column]),
-                concept_text=str(concept["concept_text"]),
+                student_answer=student_ans,
+                concept_text=concept_text,
             )
             rows.append(
                 {
@@ -76,14 +86,43 @@ def main() -> None:
                     "answer_id": row.get("answer_id", ""),
                     "concept_id": concept["concept_id"],
                     "question": row.get("question", ""),
-                    "student_answer": row[answer_column],
-                    "concept_text": concept["concept_text"],
+                    "student_answer": student_ans,
+                    "concept_text": concept_text,
                     "label": label,
-                    "label_source": "weak_ai_score",
+                    "label_source": f"weak_ai_score_overlap_{overlap:.2f}",
                     "target_score": row.get(args.target_score_column, ""),
                     "model_input": prompt,
                 }
             )
+
+        # 2. Add negative samples
+        other_q_ids = [q for q in all_question_ids if q != question_id]
+        if len(other_q_ids) >= 2:
+            sampled_neg_q_ids = random.sample(other_q_ids, 2)
+            for neg_q_id in sampled_neg_q_ids:
+                neg_concepts = concepts_by_question.get(neg_q_id, [])
+                if neg_concepts:
+                    neg_concept = random.choice(neg_concepts)
+                    neg_concept_text = str(neg_concept["concept_text"])
+                    neg_prompt = build_model_input(
+                        question=str(row.get("question", "")),
+                        student_answer=student_ans,
+                        concept_text=neg_concept_text,
+                    )
+                    rows.append(
+                        {
+                            "question_id": question_id,
+                            "answer_id": row.get("answer_id", ""),
+                            "concept_id": neg_concept["concept_id"],
+                            "question": row.get("question", ""),
+                            "student_answer": student_ans,
+                            "concept_text": neg_concept_text,
+                            "label": "missing",
+                            "label_source": "negative_sample",
+                            "target_score": row.get(args.target_score_column, ""),
+                            "model_input": neg_prompt,
+                        }
+                    )
 
     output = pd.DataFrame(rows)
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -100,6 +139,51 @@ def main() -> None:
             ensure_ascii=True,
         )
     )
+
+
+def compute_token_overlap(student_answer: str, concept_text: str) -> float:
+    """Compute the ratio of non-stopword concept tokens present in student answer."""
+    from module1.preprocessing.preprocessing import tokenize_text
+    student_tokens = set(tokenize_text(student_answer))
+    concept_tokens = set(tokenize_text(concept_text))
+    
+    stopwords = {
+        "is", "e", "a", "an", "the", "and", "or", "of", "in", "on", "at", 
+        "to", "for", "with", "by", "as", "that", "this", "it", "its", "from", "via",
+        "was", "were", "be", "been", "being", "are", "but"
+    }
+    
+    filtered_concept_tokens = concept_tokens - stopwords
+    if not filtered_concept_tokens:
+        return 0.0
+        
+    overlap = filtered_concept_tokens.intersection(student_tokens)
+    return len(overlap) / len(filtered_concept_tokens)
+
+
+def label_from_overlap_and_score(score_value: object, overlap: float) -> str:
+    from typing import Any
+    try:
+        score = float(score_value)
+    except (TypeError, ValueError):
+        score = 2.5
+        
+    if score >= 4.0:
+        if overlap >= 0.25:
+            return "covered"
+        elif overlap >= 0.10:
+            return "partial"
+        return "missing"
+    elif score >= 2.0:
+        if overlap >= 0.25:
+            return "covered"
+        elif overlap >= 0.10:
+            return "partial"
+        return "missing"
+    else: # score < 2.0
+        if overlap >= 0.30:
+            return "partial"
+        return "missing"
 
 
 def choose_answer_column(dataframe: pd.DataFrame, preferred_column: str) -> str:

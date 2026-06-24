@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 import pandas as pd
+from module1.preprocessing.preprocessing import clean_text
 
 
 LABEL_TO_ID = {"missing": 0, "partial": 1, "covered": 2}
@@ -89,16 +90,30 @@ class ConceptCoveragePredictor:
         question_id_column: str,
         question_column: str,
     ) -> list[dict[str, object]]:
+        """Predict labels for a single row's concepts.
+
+        Implements a quick cleaned-literal match: if the cleaned concept text
+        appears verbatim in the cleaned student answer, mark it `covered`
+        without calling the transformer. Otherwise call the model per concept.
+        """
         predictions: list[dict[str, object]] = []
         question = str(row.get(question_column, ""))
         student_answer = str(row.get(answer_column, ""))
+        student_answer_clean = clean_text(student_answer)
+
         for concept in concepts:
-            prompt = build_model_input(
-                question=question,
-                student_answer=student_answer,
-                concept_text=str(concept["concept_text"]),
-            )
-            label, confidence = self.predict_prompt(prompt)
+            concept_text = str(concept["concept_text"])
+            concept_text_clean = clean_text(concept_text)
+            if concept_text_clean and concept_text_clean in student_answer_clean:
+                label, confidence = "covered", 0.99
+            else:
+                prompt = build_model_input(
+                    question=question,
+                    student_answer=student_answer,
+                    concept_text=concept_text,
+                )
+                label, confidence = self.predict_prompt(prompt)
+
             predictions.append(
                 build_prediction(
                     concept=concept,
@@ -110,8 +125,14 @@ class ConceptCoveragePredictor:
         return predictions
 
     def predict_prompt(self, prompt: str) -> tuple[str, float]:
+        results = self.predict_prompts([prompt])
+        return results[0]
+
+    def predict_prompts(self, prompts: list[str]) -> list[tuple[str, float]]:
+        if not prompts:
+            return []
         encoded = self.tokenizer(
-            prompt,
+            prompts,
             truncation=True,
             padding=True,
             max_length=self.max_length,
@@ -119,11 +140,16 @@ class ConceptCoveragePredictor:
         )
         encoded = {key: value.to(self.device) for key, value in encoded.items()}
         with self.torch.no_grad():
-            logits = self.model(**encoded).logits[0]
+            logits = self.model(**encoded).logits
             probabilities = self.torch.softmax(logits, dim=-1)
-            confidence, label_id = self.torch.max(probabilities, dim=-1)
+            confidences, label_ids = self.torch.max(probabilities, dim=-1)
 
-        return ID_TO_LABEL[int(label_id.item())], float(confidence.item())
+        results = []
+        for i in range(len(prompts)):
+            label_id = int(label_ids[i].item())
+            confidence = float(confidences[i].item())
+            results.append((ID_TO_LABEL[label_id], confidence))
+        return results
 
 
 def build_model_input(question: str, student_answer: str, concept_text: str) -> str:

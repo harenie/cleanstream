@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 from typing import Protocol
 
-from module1.preprocessing.preprocessing import clean_text, tokenize_text
+from module1.preprocessing.preprocessing import clean_text, load_dataset, tokenize_text
 
 
 REASONING_CONNECTIVES = [
@@ -48,6 +48,12 @@ COMMON_MISSPELLINGS = {
 }
 
 DEFAULT_REASONING_MODEL_PATH = Path("module1") / "models" / "concept_coverage_model"
+DEFAULT_QUESTION_REQUIREMENTS_PATH = Path("data") / "reference" / "question_requirements.csv"
+REQUIRED_QUESTION_REQUIREMENT_COLUMNS = {
+    "question_id",
+    "reasoning_required",
+    "reasoning_expected_type",
+}
 REASONING_MODEL_CONCEPT_TEXT = (
     "The student answer provides clear reasoning by explaining why or how the "
     "claim is true, linking causes and effects, and supporting statements with "
@@ -55,6 +61,7 @@ REASONING_MODEL_CONCEPT_TEXT = (
 )
 REASONING_LABEL_TO_QUALITY = {"missing": "poor", "partial": "partial", "covered": "good"}
 REASONING_QUALITY_TO_SCORE = {"poor": 0.0, "partial": 0.5, "good": 1.0}
+NOT_APPLICABLE_REASONING_QUALITY = "not_applicable"
 
 
 class ReasoningPromptPredictor(Protocol):
@@ -119,25 +126,154 @@ def build_reasoning_predictor(
         raise
 
 
+def load_question_requirements(
+    path: str | Path = DEFAULT_QUESTION_REQUIREMENTS_PATH,
+) -> dict[str, dict[str, object]]:
+    """Load question-level reasoning requirements keyed by question id."""
+    requirement_path = Path(path)
+    if not requirement_path.exists():
+        return {}
+
+    requirements = load_dataset(requirement_path)
+    requirements.columns = [
+        str(column).strip().lower().replace(" ", "_").replace("-", "_")
+        for column in requirements.columns
+    ]
+    missing = REQUIRED_QUESTION_REQUIREMENT_COLUMNS.difference(requirements.columns)
+    if missing:
+        raise ValueError(
+            f"Question requirement reference is missing columns: {sorted(missing)}"
+        )
+
+    output: dict[str, dict[str, object]] = {}
+    for _, row in requirements.iterrows():
+        question_id = str(row["question_id"])
+        output[question_id] = {
+            "reasoning_required": parse_bool(row["reasoning_required"]),
+            "reasoning_expected_type": str(row["reasoning_expected_type"]).strip()
+            or "unspecified",
+            "reasoning_requirement_source": "question_requirements",
+            "reasoning_skip_reason": str(row.get("reasoning_skip_reason", "")).strip(),
+            "reasoning_notes": str(row.get("reasoning_notes", "")).strip(),
+        }
+    return output
+
+
+def resolve_question_requirement(
+    question_id: object,
+    question: object,
+    requirements_by_question: dict[str, dict[str, object]] | None = None,
+) -> dict[str, object]:
+    """Return explicit or inferred reasoning requirement metadata."""
+    requirements = requirements_by_question or {}
+    question_id_text = str(question_id)
+    if question_id_text in requirements:
+        requirement = dict(requirements[question_id_text])
+        if not requirement["reasoning_required"] and not requirement["reasoning_skip_reason"]:
+            requirement["reasoning_skip_reason"] = (
+                "Skipped because the reference marks this question as not requiring reasoning."
+            )
+        return requirement
+
+    return infer_question_requirement(question)
+
+
+def parse_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    return text in {"1", "true", "yes", "y", "required"}
+
+
+def infer_question_requirement(question: object) -> dict[str, object]:
+    """Infer a conservative fallback requirement from question wording."""
+    text = clean_text(question)
+    if not text:
+        return {
+            "reasoning_required": False,
+            "reasoning_expected_type": "unknown",
+            "reasoning_requirement_source": "heuristic",
+            "reasoning_skip_reason": "Skipped because no question text was available.",
+            "reasoning_notes": "",
+        }
+
+    if re.search(r"\b(critically|evaluate|assess|analyse|analyze|justify)\b", text):
+        expected_type = "critical_evaluation"
+    elif re.search(r"\b(compare|contrast|distinguish)\b", text):
+        expected_type = "comparative_reasoning"
+    elif re.search(r"\b(why|how|impact|implications?|role|contributes?|conditions?)\b", text):
+        expected_type = "causal_explanation"
+    elif re.search(r"\b(explain|discuss)\b", text):
+        expected_type = "descriptive_explanation"
+    else:
+        expected_type = ""
+
+    if expected_type:
+        return {
+            "reasoning_required": True,
+            "reasoning_expected_type": expected_type,
+            "reasoning_requirement_source": "heuristic",
+            "reasoning_skip_reason": "",
+            "reasoning_notes": "",
+        }
+
+    return {
+        "reasoning_required": False,
+        "reasoning_expected_type": "not_required",
+        "reasoning_requirement_source": "heuristic",
+        "reasoning_skip_reason": (
+            "Skipped because the question wording asks for recall, listing, or description."
+        ),
+        "reasoning_notes": "",
+    }
+
+
 def assess_reasoning(
     student_answer: object,
     question: object = "",
     backend: str = "rule-based",
     predictor: ReasoningPromptPredictor | None = None,
     model_path: str | Path | None = None,
+    reasoning_required: bool = True,
+    reasoning_expected_type: str = "unspecified",
+    reasoning_requirement_source: str = "caller",
+    reasoning_skip_reason: str = "",
 ) -> dict[str, object]:
     """Estimate reasoning quality with rules or the shared DistilBERT classifier."""
     marker_stats = calculate_reasoning_marker_stats(student_answer)
+    if not reasoning_required:
+        return {
+            **marker_stats,
+            "reasoning_required": False,
+            "reasoning_expected_type": reasoning_expected_type,
+            "reasoning_requirement_source": reasoning_requirement_source,
+            "reasoning_skip_reason": reasoning_skip_reason
+            or "Skipped because this question does not require reasoning.",
+            "reasoning_quality": NOT_APPLICABLE_REASONING_QUALITY,
+            "reasoning_quality_score": None,
+            "reasoning_backend": "not-required",
+            "reasoning_model_label": "",
+            "reasoning_model_confidence": 0.0,
+        }
+
     normalized_backend = backend.lower().replace("_", "-")
     if normalized_backend in {"auto", "trained-llm", "llm", "transformer", "distilbert"}:
         if predictor is None:
             predictor = build_reasoning_predictor(normalized_backend, model_path)
         if predictor is not None:
-            prompt = build_reasoning_model_input(question, student_answer)
+            prompt = build_reasoning_model_input(
+                question,
+                student_answer,
+                reasoning_expected_type=reasoning_expected_type,
+            )
             label, confidence = predictor.predict_prompt(prompt)
             quality = REASONING_LABEL_TO_QUALITY.get(label, "partial")
             return {
                 **marker_stats,
+                "reasoning_required": True,
+                "reasoning_expected_type": reasoning_expected_type,
+                "reasoning_requirement_source": reasoning_requirement_source,
+                "reasoning_skip_reason": "",
                 "reasoning_quality": quality,
                 "reasoning_quality_score": REASONING_QUALITY_TO_SCORE[quality],
                 "reasoning_backend": getattr(predictor, "backend_name", "trained-llm"),
@@ -148,6 +284,10 @@ def assess_reasoning(
     quality = rule_based_reasoning_quality(marker_stats["reasoning_connective_count"])
     return {
         **marker_stats,
+        "reasoning_required": True,
+        "reasoning_expected_type": reasoning_expected_type,
+        "reasoning_requirement_source": reasoning_requirement_source,
+        "reasoning_skip_reason": "",
         "reasoning_quality": quality,
         "reasoning_quality_score": REASONING_QUALITY_TO_SCORE[quality],
         "reasoning_backend": "rule-based",
@@ -181,13 +321,19 @@ def rule_based_reasoning_quality(connective_count: object) -> str:
     return "poor"
 
 
-def build_reasoning_model_input(question: object, student_answer: object) -> str:
+def build_reasoning_model_input(
+    question: object,
+    student_answer: object,
+    reasoning_expected_type: str = "unspecified",
+) -> str:
     """Reuse the concept classifier prompt format for reasoning quality."""
     return (
         "Question: "
         + str(question or "")
         + "\nStudent Answer: "
         + str(student_answer or "")
+        + "\nReasoning Requirement: "
+        + reasoning_expected_type
         + "\nExpected Concept: "
         + REASONING_MODEL_CONCEPT_TEXT
         + "\nTask: Classify whether the student answer covers the expected reasoning quality concept as missing, partial, or covered."

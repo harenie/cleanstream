@@ -130,23 +130,21 @@ def main() -> None:
 
 class ConceptCoverageDataset:
     def __init__(self, dataframe: pd.DataFrame, tokenizer: object, max_length: int) -> None:
-        self.inputs = dataframe["model_input"].astype(str).tolist()
         self.labels = [LABEL_TO_ID[label] for label in dataframe["label"].tolist()]
-        self.tokenizer = tokenizer
-        self.max_length = max_length
-
-    def __len__(self) -> int:
-        return len(self.inputs)
-
-    def __getitem__(self, index: int) -> dict[str, object]:
-        encoded = self.tokenizer(
-            self.inputs[index],
+        inputs = dataframe["model_input"].astype(str).tolist()
+        self.encodings = tokenizer(
+            inputs,
             truncation=True,
             padding="max_length",
-            max_length=self.max_length,
+            max_length=max_length,
             return_tensors="pt",
         )
-        item = {key: value.squeeze(0) for key, value in encoded.items()}
+
+    def __len__(self) -> int:
+        return len(self.labels)
+
+    def __getitem__(self, index: int) -> dict[str, object]:
+        item = {key: value[index] for key, value in self.encodings.items()}
         import torch
 
         item["labels"] = torch.tensor(self.labels[index], dtype=torch.long)

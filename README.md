@@ -61,7 +61,7 @@ The semantic similarity step:
 The full Module 1 pipeline:
 
 - combines concept coverage, semantic similarity, reasoning quality, scoped contradiction checks, language-quality indicators, and cross-question relevance flags
-- supports DistilBERT-backed reasoning quality by reusing the concept coverage model, with a rule-based fallback from explicit explanation markers
+- supports DistilBERT-backed reasoning quality by reusing the concept coverage model, with question-level requirement gating before answer-level reasoning is assessed
 - uses the trained DistilBERT model first for concept coverage and reasoning when available, with rule/weak-score fallbacks for local robustness
 - does not train the final scoring model; score prediction belongs to Module 2
 
