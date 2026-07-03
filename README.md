@@ -7,10 +7,12 @@ This repository is intentionally small so group members can review the early gra
 ## Files
 
 - `module1/preprocessing/preprocessing.py` - reusable preprocessing functions.
-- `module1/concept_coverage/concept_coverage.py` - reference-concept coverage helpers.
-- `module1/concept_coverage/llm_concept_coverage.py` - transformer/LLM concept coverage inference.
-- `module1/concept_coverage/concepts_reference.py` - expected concept reference loading and generation.
-- `module1/semantic_similarity/semantic_similarity.py` - reusable TF-IDF cosine semantic similarity helpers.
+- `module1/concept_coverage/concept_coverage.py` - generated/reference concept coverage helpers.
+- `module1/concept_coverage/concept_generation.py` - FLAN-T5 concept generation and cache helpers.
+- `module1/concept_coverage/llm_concept_coverage.py` - NLI, transformer, and weak-score concept coverage inference.
+- `module1/concept_coverage/concepts_reference.py` - expected concept reference loading and fallback generation.
+- `module1/nli/nli.py` - shared DeBERTa-v3-style NLI scoring for concept, reasoning, and contradiction checks.
+- `module1/semantic_similarity/semantic_similarity.py` - Sentence-BERT and TF-IDF semantic similarity helpers.
 - `module1/language_quality/language_quality.py` - optional spelling and grammar quality checks.
 - `module1/reasoning/reasoning.py` - reasoning quality, contradiction, and noise-detection helpers.
 - `module1/model_answers/model_answers.py` - model-answer reference loading and attachment helpers.
@@ -42,27 +44,28 @@ The preprocessing step:
 
 The concept coverage step:
 
-- compares each `student_answer` against predefined expected concepts from `data/reference/concepts.csv`
-- uses a trainable transformer classifier to label each concept as `missing`, `partial`, or `covered`
-- uses `auto` mode by default, which tries the DistilBERT concept model first and falls back to the `weak-score` bootstrap backend only when the model or dependencies are unavailable
+- generates expected concept statements from marking-schema/model answers with FLAN-T5 and caches them in `module1/generated_outputs/generated_concepts.csv`
+- keeps `data/reference/concepts.csv` as a reviewable/manual fallback rather than the default source of truth
+- uses a DeBERTa-v3-style NLI model by default to label each concept as `missing`, `partial`, or `covered`
+- keeps the earlier DistilBERT classifier and `weak-score` bootstrap backend as explicit fallback options
 - renames the dataset's student-answer field to `student_answer` in the concept output
 - removes raw `generated_answer` columns from the concept output
-- adds `model_answer`, `missing_model_answer`, `concepts`, `concepts_present`, `concepts_partial`, `concepts_missing`, `concept_prediction_details`, and `concepts_covered_ratio`
+- adds `model_answer`, `missing_model_answer`, `concept_backend`, `concept_source`, `concepts`, `concepts_present`, `concepts_partial`, `concepts_missing`, `concept_prediction_details`, and `concepts_covered_ratio`
 
 The semantic similarity step:
 
 - compares each `student_answer` against the marking-schema `model_answer`
-- uses a TF-IDF word n-gram vectorizer and cosine similarity by default
-- fits TF-IDF on marking-schema/model-answer text only, so evaluated student answers do not define their own similarity vocabulary
-- supports optional Sentence-BERT with `--similarity-backend sentence-bert`
+- uses Sentence-BERT by default for sentence-level semantic similarity
+- keeps TF-IDF as a lightweight fallback with `--similarity-backend tfidf`
 - adds `semantic_similarity_score`, `student_answer_length`, and `model_answer_length`
 - marks rows without a model answer as `missing_model_answer`
 
 The full Module 1 pipeline:
 
 - combines concept coverage, semantic similarity, reasoning quality, scoped contradiction checks, language-quality indicators, and cross-question relevance flags
-- supports DistilBERT-backed reasoning quality by reusing the concept coverage model, with question-level requirement gating before answer-level reasoning is assessed
-- uses the trained DistilBERT model first for concept coverage and reasoning when available, with rule/weak-score fallbacks for local robustness
+- uses FLAN-T5 generated concepts, NLI concept coverage, NLI contradiction checks, and Sentence-BERT similarity by default
+- checks `data/reference/question_requirements.csv` before scoring reasoning; non-reasoning questions are marked `not_applicable`
+- keeps DistilBERT, rule-based, weak-score, and TF-IDF paths for local comparison and fallback
 - does not train the final scoring model; score prediction belongs to Module 2
 
 The first training baseline:
@@ -72,7 +75,7 @@ The first training baseline:
 - uses a fixed `2/3` train and `1/3` test split with `random_state=42`
 - writes the split, predictions, metrics, and trained model to `module2/training_results`
 
-Contradiction detection is scoped by question type. It runs only for definition or concept-identification questions such as "define", "what is", or "explain the concept". It is skipped for advantages/disadvantages, pros/cons, benefits/drawbacks, comparison, challenge, and limitation questions because balanced answers may naturally contain opposing points.
+Contradiction detection uses NLI by default, comparing the student answer against generated expected concepts and recording the strongest contradiction score. The older scoped pattern detector remains available with `--contradiction-backend rule-based`.
 
 ## Setup
 
@@ -95,6 +98,12 @@ For semantic similarity and training, install all requirements:
 pip install -r requirements.txt
 ```
 
+For the Module 1 NLI/Sentence-BERT/FLAN-T5 path, install the LLM requirements:
+
+```powershell
+pip install -r requirements-llm.txt
+```
+
 ## Run
 
 From inside this repository:
@@ -114,7 +123,7 @@ That output file is only for local checking. It does not need to be committed.
 To add concept coverage columns:
 
 ```powershell
-python module1\scripts\run_concept_coverage.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --concept-reference "data\reference\concepts.csv" --concept-backend trained-llm --concept-model-path "module1\models\concept_coverage_model" --output module1\outputs\concept_coverage_output.xlsx
+python module1\scripts\run_concept_coverage.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --concept-source generated --concept-backend nli --output module1\outputs\concept_coverage_output.xlsx
 ```
 
 If the dataset already has a populated `model_answer` column, the `--model-answers-file` argument is optional.
@@ -124,6 +133,8 @@ To rebuild the expected concept reference from marking-scheme bullet points:
 ```powershell
 python module1\scripts\build_concept_reference.py --model-answers data\reference\model_answers.csv --output data\reference\concepts.csv
 ```
+
+The manual `data\reference\concepts.csv` file is now a fallback/review artifact. The default generated concept cache is `module1\generated_outputs\generated_concepts.csv`.
 
 To prepare weak concept-level training rows from existing answer scores:
 
@@ -140,17 +151,16 @@ python module1\scripts\train_concept_model.py --training-data data\training\conc
 
 The current local model was trained from weak labels derived from `ai_score`. For stronger research results, manually review/update `data\training\concept_coverage_training.csv` labels before retraining.
 
-To add semantic similarity columns:
+To add semantic similarity columns with the default Sentence-BERT backend:
 
 ```powershell
 python module1\scripts\run_semantic_similarity.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --output module1\outputs\semantic_similarity_output.xlsx
 ```
 
-To test the optional Sentence-BERT similarity backend after installing its dependency:
+To use the lightweight TF-IDF fallback:
 
 ```powershell
-pip install sentence-transformers
-python module1\scripts\run_semantic_similarity.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --similarity-backend sentence-bert --output module1\outputs\semantic_similarity_sbert_output.xlsx
+python module1\scripts\run_semantic_similarity.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --similarity-backend tfidf --output module1\outputs\semantic_similarity_tfidf_output.xlsx
 ```
 
 To build the full Module 1 feature file with lightweight language-quality checks:
@@ -162,7 +172,7 @@ python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx"
 To force the trained concept coverage model in Module 1:
 
 ```powershell
-python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --concept-backend trained-llm --concept-model-path module1\models\concept_coverage_model --strict-model-answers --output module1\generated_outputs\module1_features.csv
+python module1\scripts\run_module1_features.py "data\raw\synthetic_dataset.xlsx" --model-answers-file "data\reference\model_answers.csv" --concept-source reference --concept-backend trained-llm --concept-model-path module1\models\concept_coverage_model --similarity-backend tfidf --contradiction-backend rule-based --strict-model-answers --output module1\generated_outputs\module1_features_legacy.csv
 ```
 
 To force DistilBERT-backed reasoning quality as well:

@@ -62,6 +62,9 @@ REASONING_MODEL_CONCEPT_TEXT = (
 REASONING_LABEL_TO_QUALITY = {"missing": "poor", "partial": "partial", "covered": "good"}
 REASONING_QUALITY_TO_SCORE = {"poor": 0.0, "partial": 0.5, "good": 1.0}
 NOT_APPLICABLE_REASONING_QUALITY = "not_applicable"
+NLI_REASONING_GOOD_THRESHOLD = 0.62
+NLI_REASONING_PARTIAL_THRESHOLD = 0.35
+NLI_CONTRADICTION_THRESHOLD = 0.60
 
 
 class ReasoningPromptPredictor(Protocol):
@@ -104,13 +107,17 @@ def contains_any(text: str, phrases: list[str]) -> bool:
 def build_reasoning_predictor(
     backend: str = "auto",
     model_path: str | Path | None = None,
-) -> ReasoningPromptPredictor | None:
-    """Build the optional DistilBERT reasoning predictor."""
+    nli_model_name: str | None = None,
+    nli_engine: object | None = None,
+) -> object | None:
+    """Build the optional reasoning predictor."""
     normalized_backend = backend.lower().replace("_", "-")
     if normalized_backend in {"rule-based", "rules", "simple", "none"}:
         return None
+    if normalized_backend == "nli":
+        return NLIReasoningPredictor(model_name=nli_model_name, nli_engine=nli_engine)
     if normalized_backend not in {"auto", "trained-llm", "llm", "transformer", "distilbert"}:
-        raise ValueError("reasoning backend must be 'auto', 'rule-based', or 'trained-llm'")
+        raise ValueError("reasoning backend must be 'auto', 'rule-based', 'trained-llm', or 'nli'")
 
     resolved_model_path = Path(model_path) if model_path is not None else DEFAULT_REASONING_MODEL_PATH
     if normalized_backend == "auto" and not resolved_model_path.exists():
@@ -124,6 +131,44 @@ def build_reasoning_predictor(
         if normalized_backend == "auto":
             return None
         raise
+
+
+class NLIReasoningPredictor:
+    """NLI reasoning checker using question-type-specific hypotheses."""
+
+    backend_name = "nli"
+
+    def __init__(
+        self,
+        model_name: str | None = None,
+        nli_engine: object | None = None,
+    ) -> None:
+        if nli_engine is None:
+            from module1.nli.nli import DEFAULT_NLI_MODEL_NAME, NLIEngine
+
+            nli_engine = NLIEngine(model_name=model_name or DEFAULT_NLI_MODEL_NAME)
+        self.nli_engine = nli_engine
+
+    def assess(
+        self,
+        question: object,
+        student_answer: object,
+        reasoning_expected_type: str,
+    ) -> dict[str, object]:
+        hypothesis = build_reasoning_nli_hypothesis(reasoning_expected_type)
+        result = self.nli_engine.predict(student_answer, hypothesis)
+        quality = nli_result_to_reasoning_quality(result)
+        return {
+            "reasoning_quality": quality,
+            "reasoning_quality_score": REASONING_QUALITY_TO_SCORE[quality],
+            "reasoning_backend": self.backend_name,
+            "reasoning_model_label": result.label,
+            "reasoning_model_confidence": result.entailment,
+            "reasoning_nli_label": result.label,
+            "reasoning_nli_entailment_score": result.entailment,
+            "reasoning_nli_neutral_score": result.neutral,
+            "reasoning_nli_contradiction_score": result.contradiction,
+        }
 
 
 def load_question_requirements(
@@ -234,6 +279,9 @@ def assess_reasoning(
     backend: str = "rule-based",
     predictor: ReasoningPromptPredictor | None = None,
     model_path: str | Path | None = None,
+    nli_model_name: str | None = None,
+    nli_engine: object | None = None,
+    nli_support_score: float | None = None,
     reasoning_required: bool = True,
     reasoning_expected_type: str = "unspecified",
     reasoning_requirement_source: str = "caller",
@@ -254,9 +302,49 @@ def assess_reasoning(
             "reasoning_backend": "not-required",
             "reasoning_model_label": "",
             "reasoning_model_confidence": 0.0,
+            "reasoning_nli_label": "",
+            "reasoning_nli_entailment_score": 0.0,
+            "reasoning_nli_neutral_score": 0.0,
+            "reasoning_nli_contradiction_score": 0.0,
         }
 
     normalized_backend = backend.lower().replace("_", "-")
+    if normalized_backend == "nli":
+        if nli_support_score is not None:
+            quality = nli_support_score_to_reasoning_quality(nli_support_score)
+            return {
+                **marker_stats,
+                "reasoning_required": True,
+                "reasoning_expected_type": reasoning_expected_type,
+                "reasoning_requirement_source": reasoning_requirement_source,
+                "reasoning_skip_reason": "",
+                "reasoning_quality": quality,
+                "reasoning_quality_score": REASONING_QUALITY_TO_SCORE[quality],
+                "reasoning_backend": "nli",
+                "reasoning_model_label": "entailment" if nli_support_score >= NLI_REASONING_PARTIAL_THRESHOLD else "neutral",
+                "reasoning_model_confidence": round(float(nli_support_score), 4),
+                "reasoning_nli_label": "entailment" if nli_support_score >= NLI_REASONING_PARTIAL_THRESHOLD else "neutral",
+                "reasoning_nli_entailment_score": round(float(nli_support_score), 4),
+                "reasoning_nli_neutral_score": round(float(max(0.0, 1.0 - nli_support_score)), 4),
+                "reasoning_nli_contradiction_score": 0.0,
+            }
+        if predictor is None:
+            predictor = build_reasoning_predictor(
+                normalized_backend,
+                model_path,
+                nli_model_name=nli_model_name,
+                nli_engine=nli_engine,
+            )
+        nli_result = predictor.assess(question, student_answer, reasoning_expected_type)
+        return {
+            **marker_stats,
+            "reasoning_required": True,
+            "reasoning_expected_type": reasoning_expected_type,
+            "reasoning_requirement_source": reasoning_requirement_source,
+            "reasoning_skip_reason": "",
+            **nli_result,
+        }
+
     if normalized_backend in {"auto", "trained-llm", "llm", "transformer", "distilbert"}:
         if predictor is None:
             predictor = build_reasoning_predictor(normalized_backend, model_path)
@@ -279,6 +367,10 @@ def assess_reasoning(
                 "reasoning_backend": getattr(predictor, "backend_name", "trained-llm"),
                 "reasoning_model_label": label,
                 "reasoning_model_confidence": round(float(confidence), 4),
+                "reasoning_nli_label": "",
+                "reasoning_nli_entailment_score": 0.0,
+                "reasoning_nli_neutral_score": 0.0,
+                "reasoning_nli_contradiction_score": 0.0,
             }
 
     quality = rule_based_reasoning_quality(marker_stats["reasoning_connective_count"])
@@ -293,6 +385,10 @@ def assess_reasoning(
         "reasoning_backend": "rule-based",
         "reasoning_model_label": "",
         "reasoning_model_confidence": 0.0,
+        "reasoning_nli_label": "",
+        "reasoning_nli_entailment_score": 0.0,
+        "reasoning_nli_neutral_score": 0.0,
+        "reasoning_nli_contradiction_score": 0.0,
     }
 
 
@@ -340,6 +436,43 @@ def build_reasoning_model_input(
     )
 
 
+def build_reasoning_nli_hypothesis(reasoning_expected_type: str) -> str:
+    expected_type = str(reasoning_expected_type or "").lower()
+    if "critical" in expected_type:
+        return (
+            "The answer gives a critical evaluation by explaining effects, trade-offs, "
+            "limitations, or implications rather than only listing facts."
+        )
+    if "comparative" in expected_type:
+        return (
+            "The answer compares the relevant items and explains meaningful similarities, "
+            "differences, advantages, or disadvantages."
+        )
+    if "causal" in expected_type:
+        return (
+            "The answer explains why or how the result happens by linking causes, effects, "
+            "or supporting evidence."
+        )
+    return (
+        "The answer explains the idea with enough logical support, examples, or relationships "
+        "to show understanding beyond isolated keywords."
+    )
+
+
+def nli_result_to_reasoning_quality(result: object) -> str:
+    entailment = float(getattr(result, "entailment", 0.0))
+    return nli_support_score_to_reasoning_quality(entailment)
+
+
+def nli_support_score_to_reasoning_quality(score: float) -> str:
+    entailment = float(score)
+    if entailment >= NLI_REASONING_GOOD_THRESHOLD:
+        return "good"
+    if entailment >= NLI_REASONING_PARTIAL_THRESHOLD:
+        return "partial"
+    return "poor"
+
+
 def should_check_contradictions(question: object) -> dict[str, object]:
     """Return whether contradiction detection should run for this question type."""
     text = clean_text(question)
@@ -376,7 +509,24 @@ def should_check_contradictions(question: object) -> dict[str, object]:
     }
 
 
-def detect_contradictions(student_answer: object, question: object = "") -> dict[str, object]:
+def detect_contradictions(
+    student_answer: object,
+    question: object = "",
+    backend: str = "rule-based",
+    nli_engine: object | None = None,
+    concepts: list[str] | None = None,
+    model_answer: object = "",
+) -> dict[str, object]:
+    """Detect contradictions with NLI or simple scoped patterns."""
+    normalized_backend = backend.lower().replace("_", "-")
+    if normalized_backend == "nli":
+        return detect_contradictions_with_nli(
+            student_answer=student_answer,
+            nli_engine=nli_engine,
+            concepts=concepts or [],
+            model_answer=model_answer,
+        )
+
     """Detect simple wrong-logic patterns only for targeted question types."""
     scope = should_check_contradictions(question)
     if not scope["contradiction_check_applied"]:
@@ -384,6 +534,12 @@ def detect_contradictions(student_answer: object, question: object = "") -> dict
             **scope,
             "contradiction_detected": False,
             "contradiction_detail": "",
+            "contradiction_backend": "rule-based",
+            "contradiction_score": 0.0,
+            "contradiction_source_concept": "",
+            "contradiction_nli_entailment_score": 0.0,
+            "contradiction_nli_neutral_score": 0.0,
+            "contradiction_nli_contradiction_score": 0.0,
         }
 
     text = clean_text(student_answer)
@@ -426,6 +582,61 @@ def detect_contradictions(student_answer: object, question: object = "") -> dict
         **scope,
         "contradiction_detected": bool(details),
         "contradiction_detail": " ".join(details),
+        "contradiction_backend": "rule-based",
+        "contradiction_score": 0.0,
+        "contradiction_source_concept": "",
+        "contradiction_nli_entailment_score": 0.0,
+        "contradiction_nli_neutral_score": 0.0,
+        "contradiction_nli_contradiction_score": 0.0,
+    }
+
+
+def detect_contradictions_with_nli(
+    student_answer: object,
+    nli_engine: object | None,
+    concepts: list[str],
+    model_answer: object = "",
+) -> dict[str, object]:
+    hypotheses = [concept for concept in concepts if clean_text(concept)]
+    if not hypotheses and clean_text(model_answer):
+        hypotheses = [str(model_answer)]
+    if not hypotheses:
+        return {
+            "contradiction_check_applied": False,
+            "contradiction_question_scope": "no_expected_claims",
+            "contradiction_skip_reason": "Skipped because no expected concepts were available.",
+            "contradiction_detected": False,
+            "contradiction_detail": "",
+            "contradiction_backend": "nli",
+            "contradiction_score": 0.0,
+            "contradiction_source_concept": "",
+            "contradiction_nli_entailment_score": 0.0,
+            "contradiction_nli_neutral_score": 0.0,
+            "contradiction_nli_contradiction_score": 0.0,
+        }
+    if nli_engine is None:
+        from module1.nli.nli import NLIEngine
+
+        nli_engine = NLIEngine()
+    results = nli_engine.predict_many([student_answer] * len(hypotheses), hypotheses)
+    best_index = max(range(len(results)), key=lambda index: results[index].contradiction)
+    best = results[best_index]
+    source_concept = hypotheses[best_index]
+    detected = best.contradiction >= NLI_CONTRADICTION_THRESHOLD
+    return {
+        "contradiction_check_applied": True,
+        "contradiction_question_scope": "nli_expected_concepts",
+        "contradiction_skip_reason": "",
+        "contradiction_detected": detected,
+        "contradiction_detail": (
+            f"Contradicts expected concept: {source_concept}" if detected else ""
+        ),
+        "contradiction_backend": "nli",
+        "contradiction_score": best.contradiction,
+        "contradiction_source_concept": source_concept if detected else "",
+        "contradiction_nli_entailment_score": best.entailment,
+        "contradiction_nli_neutral_score": best.neutral,
+        "contradiction_nli_contradiction_score": best.contradiction,
     }
 
 

@@ -10,8 +10,14 @@ from module1.concept_coverage.concepts_reference import (
     DEFAULT_CONCEPT_REFERENCE_PATH,
     load_concepts_by_question,
 )
+from module1.concept_coverage.concept_generation import (
+    DEFAULT_CONCEPT_GENERATOR_MODEL_NAME,
+    DEFAULT_GENERATED_CONCEPT_REFERENCE_PATH,
+    load_or_generate_concepts,
+)
 from module1.concept_coverage.llm_concept_coverage import (
     ConceptCoveragePredictor,
+    NLIConceptCoveragePredictor,
     WeakScoreConceptCoveragePredictor,
 )
 from module1.preprocessing.preprocessing import clean_text, preprocess_dataframe
@@ -25,14 +31,21 @@ def add_concept_coverage_columns(
     max_concepts: int = 20,
     require_model_answer: bool = False,
     concept_reference_path: str | Path = DEFAULT_CONCEPT_REFERENCE_PATH,
+    concept_source: str = "reference",
+    generated_concepts_path: str | Path = DEFAULT_GENERATED_CONCEPT_REFERENCE_PATH,
+    concept_generator_backend: str = "flan-t5",
+    concept_generator_model_name: str = DEFAULT_CONCEPT_GENERATOR_MODEL_NAME,
+    regenerate_concepts: bool = False,
     concept_backend: str = "auto",
     concept_model_path: str | Path | None = None,
+    concept_nli_model_name: str | None = None,
+    concept_nli_engine: object | None = None,
     target_score_column: str = "ai_score",
 ) -> pd.DataFrame:
     """Add model-vs-student concept coverage columns using expected concepts.
 
-    Keyword extraction is intentionally not used here. Expected concepts must come
-    from ``data/reference/concepts.csv`` or another concept-reference file.
+    Keyword extraction is intentionally not used here. Expected concepts come
+    from generated model-answer concepts or a concept-reference fallback file.
     """
     processed = preprocess_dataframe(dataframe)
     model_answer_column = choose_model_answer_column(processed, model_answer_column)
@@ -42,7 +55,18 @@ def add_concept_coverage_columns(
         question_id_column=question_id_column,
         require_model_answer=require_model_answer,
     )
-    concepts_by_question = load_concepts_by_question(concept_reference_path)
+    questions_by_id = infer_questions_by_id(processed, question_id_column)
+    concepts_by_question = build_concepts_by_question(
+        concept_source=concept_source,
+        processed=processed,
+        model_answers=model_answers,
+        questions_by_id=questions_by_id,
+        concept_reference_path=concept_reference_path,
+        generated_concepts_path=generated_concepts_path,
+        concept_generator_backend=concept_generator_backend,
+        concept_generator_model_name=concept_generator_model_name,
+        regenerate_concepts=regenerate_concepts,
+    )
 
     output = processed.copy()
     answer_column = choose_student_answer_column(output, student_answer_column)
@@ -59,6 +83,8 @@ def add_concept_coverage_columns(
     predictor = build_concept_predictor(
         concept_backend=concept_backend,
         concept_model_path=concept_model_path,
+        concept_nli_model_name=concept_nli_model_name,
+        concept_nli_engine=concept_nli_engine,
         target_score_column=target_score_column,
     )
 
@@ -71,6 +97,7 @@ def add_concept_coverage_columns(
     missing_model_answer_values: list[bool] = []
     detail_values: list[str] = []
     backend_values: list[str] = []
+    source_values: list[str] = []
 
     for _, row in output.iterrows():
         question_id = str(row[question_id_column])
@@ -100,11 +127,13 @@ def add_concept_coverage_columns(
         ratio_values.append(summary["coverage_ratio"])
         detail_values.append(summary["details"])
         backend_values.append(predictor.backend_name)
+        source_values.append("; ".join(sorted({str(item.get("concept_source", "reference")) for item in concepts})))
 
     output = drop_source_model_answer_columns(output, keep_column=model_answer_column)
     output["model_answer"] = model_answer_values
     output["missing_model_answer"] = missing_model_answer_values
     output["concept_backend"] = backend_values
+    output["concept_source"] = source_values
     output["concepts"] = concept_values
     output["concepts_present"] = present_values
     output["concepts_partial"] = partial_values
@@ -118,11 +147,18 @@ def add_concept_coverage_columns(
 def build_concept_predictor(
     concept_backend: str,
     concept_model_path: str | Path | None,
+    concept_nli_model_name: str | None,
+    concept_nli_engine: object | None,
     target_score_column: str,
-) -> ConceptCoveragePredictor | WeakScoreConceptCoveragePredictor:
+) -> ConceptCoveragePredictor | WeakScoreConceptCoveragePredictor | NLIConceptCoveragePredictor:
     normalized = concept_backend.lower().replace("_", "-")
     if normalized in {"weak-score", "weak"}:
         return WeakScoreConceptCoveragePredictor(target_score_column=target_score_column)
+    if normalized in {"nli", "deberta", "deberta-mnli"}:
+        return NLIConceptCoveragePredictor(
+            model_name=concept_nli_model_name,
+            nli_engine=concept_nli_engine,
+        )
     if normalized in {"auto", "trained-llm", "llm", "transformer", "distilbert"}:
         resolved_model_path = (
             Path(concept_model_path)
@@ -135,7 +171,7 @@ def build_concept_predictor(
             if normalized == "auto":
                 return WeakScoreConceptCoveragePredictor(target_score_column=target_score_column)
             raise
-    raise ValueError("concept_backend must be 'auto', 'weak-score', or 'trained-llm'")
+    raise ValueError("concept_backend must be 'auto', 'weak-score', 'trained-llm', or 'nli'")
 
 
 def summarize_concept_predictions(predictions: list[dict[str, object]]) -> dict[str, object]:
@@ -163,6 +199,12 @@ def summarize_concept_predictions(predictions: list[dict[str, object]]) -> dict[
         weighted_score += score * max_mark
         total_weight += max_mark
         detail_parts.append(f"{concept_text}={label}:{confidence:.4f}")
+        if prediction.get("source") == "nli":
+            detail_parts[-1] += (
+                f":E{float(prediction.get('entailment_score') or 0.0):.4f}"
+                f"/N{float(prediction.get('neutral_score') or 0.0):.4f}"
+                f"/C{float(prediction.get('contradiction_score') or 0.0):.4f}"
+            )
 
     coverage_ratio = round(weighted_score / total_weight, 4) if total_weight else 0.0
     return {
@@ -207,6 +249,75 @@ def infer_model_answers(
             model_answers[question_id] = answers[0]
 
     return model_answers
+
+
+def infer_questions_by_id(
+    dataframe: pd.DataFrame,
+    question_id_column: str,
+    question_column: str = "question",
+) -> dict[str, str]:
+    if question_column not in dataframe.columns:
+        return {}
+    questions: dict[str, str] = {}
+    for question_id, group in dataframe.groupby(question_id_column, dropna=False):
+        values = [str(value).strip() for value in group[question_column].tolist() if clean_text(value)]
+        questions[str(question_id)] = values[0] if values else ""
+    return questions
+
+
+def build_concepts_by_question(
+    concept_source: str,
+    processed: pd.DataFrame,
+    model_answers: dict[object, str],
+    questions_by_id: dict[str, str],
+    concept_reference_path: str | Path,
+    generated_concepts_path: str | Path,
+    concept_generator_backend: str,
+    concept_generator_model_name: str,
+    regenerate_concepts: bool,
+) -> dict[str, list[dict[str, object]]]:
+    normalized = concept_source.lower().replace("_", "-")
+    if normalized == "reference":
+        return load_concepts_by_question(concept_reference_path)
+    if normalized not in {"generated", "auto"}:
+        raise ValueError("concept_source must be 'reference', 'generated', or 'auto'")
+
+    try:
+        generated = load_or_generate_concepts(
+            model_answers={str(key): value for key, value in model_answers.items()},
+            questions=questions_by_id,
+            output_path=generated_concepts_path,
+            generator_backend=concept_generator_backend,
+            generator_model_name=concept_generator_model_name,
+            regenerate=regenerate_concepts,
+            fallback_reference_path=concept_reference_path if normalized == "auto" else None,
+        )
+        return concepts_dataframe_to_dict(generated)
+    except (ImportError, OSError, ValueError):
+        if normalized == "auto":
+            return load_concepts_by_question(concept_reference_path)
+        raise
+
+
+def concepts_dataframe_to_dict(concepts: pd.DataFrame) -> dict[str, list[dict[str, object]]]:
+    normalized = concepts.copy()
+    if "max_mark" not in normalized.columns:
+        normalized["max_mark"] = 1.0
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for question_id, group in normalized.groupby("question_id", sort=False):
+        grouped[str(question_id)] = [
+            {
+                "concept_id": str(row["concept_id"]),
+                "concept_text": str(row["concept_text"]),
+                "max_mark": float(row.get("max_mark", 1.0)),
+                "concept_source": str(row.get("concept_source", "generated")),
+                "concept_generator_backend": str(row.get("concept_generator_backend", "")),
+                "concept_generator_model": str(row.get("concept_generator_model", "")),
+            }
+            for _, row in group.iterrows()
+            if clean_text(row["concept_text"])
+        ]
+    return grouped
 
 
 def choose_model_answer_column(dataframe: pd.DataFrame, preferred_column: str) -> str:

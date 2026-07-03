@@ -1,7 +1,7 @@
 const form = document.querySelector("#moduleForm");
 const statusBox = document.querySelector("#status");
 const processButton = document.querySelector("#processButton");
-const pathToggle = document.querySelector("#useLlmPath");
+const processingPath = document.querySelector("#processingPath");
 const pathModeLabel = document.querySelector("#pathModeLabel");
 
 const fields = {
@@ -15,13 +15,20 @@ const fields = {
   spellingCount: document.querySelector("#spellingCount"),
   wordCount: document.querySelector("#wordCount"),
   conceptBackend: document.querySelector("#conceptBackend"),
+  conceptSource: document.querySelector("#conceptSource"),
+  similarityBackend: document.querySelector("#similarityBackend"),
   reasoningBackend: document.querySelector("#reasoningBackend"),
+  contradictionBackend: document.querySelector("#contradictionBackend"),
+  contradictionScore: document.querySelector("#contradictionScore"),
   conceptCoverageBar: document.querySelector("#conceptCoverageBar"),
   semanticSimilarityBar: document.querySelector("#semanticSimilarityBar"),
   languageQualityBar: document.querySelector("#languageQualityBar"),
   coveredConcepts: document.querySelector("#coveredConcepts"),
   partialConcepts: document.querySelector("#partialConcepts"),
   missingConcepts: document.querySelector("#missingConcepts"),
+  conceptDetails: document.querySelector("#conceptDetails"),
+  reasoningNliDetail: document.querySelector("#reasoningNliDetail"),
+  contradictionDetail: document.querySelector("#contradictionDetail"),
   rawOutput: document.querySelector("#rawOutput"),
 };
 
@@ -35,7 +42,7 @@ form.addEventListener("submit", async (event) => {
     reasoning_requirement: document.querySelector("#reasoningRequirement").value,
     student_answer: document.querySelector("#studentAnswer").value,
     model_answer: document.querySelector("#modelAnswer").value,
-    processing_path: pathToggle.checked ? "llm" : "fallback",
+    processing_path: processingPath.value,
   };
 
   try {
@@ -58,7 +65,7 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-pathToggle.addEventListener("change", updatePathModeLabel);
+processingPath.addEventListener("change", updatePathModeLabel);
 updatePathModeLabel();
 
 function renderResult(result) {
@@ -77,7 +84,11 @@ function renderResult(result) {
   fields.spellingCount.textContent = String(summary.spelling_error_count ?? 0);
   fields.wordCount.textContent = String(summary.answer_word_count ?? 0);
   fields.conceptBackend.textContent = formatBackend(summary.concept_backend);
+  fields.conceptSource.textContent = formatBackend(summary.concept_source);
+  fields.similarityBackend.textContent = formatBackend(summary.similarity_backend);
   fields.reasoningBackend.textContent = formatBackend(summary.reasoning_backend);
+  fields.contradictionBackend.textContent = formatBackend(summary.contradiction_backend);
+  fields.contradictionScore.textContent = formatScore(summary.contradiction_score);
 
   setMeter(fields.conceptCoverageBar, conceptCoverage);
   setMeter(fields.semanticSimilarityBar, semanticSimilarity);
@@ -86,6 +97,9 @@ function renderResult(result) {
   renderList(fields.coveredConcepts, result.concepts.present);
   renderList(fields.partialConcepts, result.concepts.partial);
   renderList(fields.missingConcepts, result.concepts.missing);
+  renderConceptDetails(fields.conceptDetails, result.concepts.details);
+  fields.reasoningNliDetail.textContent = formatReasoningNliDetail(summary);
+  fields.contradictionDetail.textContent = formatContradictionDetail(summary);
   fields.rawOutput.textContent = JSON.stringify(result.raw, null, 2);
 }
 
@@ -101,6 +115,28 @@ function renderList(target, items) {
   for (const item of items) {
     const li = document.createElement("li");
     li.textContent = item;
+    target.appendChild(li);
+  }
+}
+
+function renderConceptDetails(target, items) {
+  target.innerHTML = "";
+  if (!items || items.length === 0) {
+    const empty = document.createElement("li");
+    empty.textContent = "No NLI details for this path";
+    target.appendChild(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const li = document.createElement("li");
+    const scores = ["entailment", "neutral", "contradiction"]
+      .filter((key) => item[key] !== undefined && item[key] !== null)
+      .map((key) => `${key[0].toUpperCase()} ${formatScore(item[key])}`)
+      .join(" / ");
+    li.textContent = scores
+      ? `${item.label}: ${item.concept} (${scores})`
+      : `${item.label}: ${item.concept}`;
     target.appendChild(li);
   }
 }
@@ -143,6 +179,27 @@ function formatReasoningDetail(summary) {
   return `${expectedType}${summary.reasoning_model_label}${confidenceText} · ${markerText}`;
 }
 
+function formatReasoningNliDetail(summary) {
+  if (summary.reasoning_required === false) {
+    return summary.reasoning_skip_reason || "Reasoning not required";
+  }
+  if (!summary.reasoning_nli_label) {
+    return "No NLI reasoning score for this path";
+  }
+  return `${summary.reasoning_nli_label} · E ${formatScore(summary.reasoning_nli_entailment_score)} / N ${formatScore(summary.reasoning_nli_neutral_score)} / C ${formatScore(summary.reasoning_nli_contradiction_score)}`;
+}
+
+function formatContradictionDetail(summary) {
+  if (!summary.contradiction_backend) {
+    return "-";
+  }
+  const score = `score ${formatScore(summary.contradiction_score)}`;
+  if (summary.contradiction_detected && summary.contradiction_source_concept) {
+    return `${score} · ${summary.contradiction_source_concept}`;
+  }
+  return score;
+}
+
 function titleCase(value) {
   return String(value)
     .replace(/_/g, " ")
@@ -155,5 +212,10 @@ function setStatus(text, state) {
 }
 
 function updatePathModeLabel() {
-  pathModeLabel.textContent = pathToggle.checked ? "LLM path" : "Fallback path";
+  const labels = {
+    nli: "NLI path",
+    llm: "Legacy DistilBERT path",
+    fallback: "Lightweight fallback",
+  };
+  pathModeLabel.textContent = labels[processingPath.value] || "NLI path";
 }

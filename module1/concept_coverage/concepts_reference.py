@@ -55,6 +55,9 @@ def load_concepts_by_question(
                 "concept_id": str(row["concept_id"]),
                 "concept_text": str(row["concept_text"]),
                 "max_mark": float(row["max_mark"]),
+                "concept_source": str(row.get("concept_source", "reference")),
+                "concept_generator_backend": str(row.get("concept_generator_backend", "")),
+                "concept_generator_model": str(row.get("concept_generator_model", "")),
             }
             for _, row in group.iterrows()
         ]

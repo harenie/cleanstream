@@ -7,12 +7,37 @@ import json
 from typing import Any
 
 import pandas as pd
+
+from module1.preprocessing.preprocessing import clean_text
 from module1.preprocessing.preprocessing import clean_text
 
 
 LABEL_TO_ID = {"missing": 0, "partial": 1, "covered": 2}
 ID_TO_LABEL = {value: key for key, value in LABEL_TO_ID.items()}
 LABEL_TO_SCORE = {"missing": 0.0, "partial": 0.5, "covered": 1.0}
+NLI_COVERED_THRESHOLD = 0.62
+NLI_PARTIAL_THRESHOLD = 0.35
+NLI_PARTIAL_OVERLAP_THRESHOLD = 0.35
+NLI_CONTRADICTION_THRESHOLD = 0.60
+NLI_STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "be",
+    "by",
+    "can",
+    "from",
+    "in",
+    "is",
+    "of",
+    "or",
+    "the",
+    "through",
+    "to",
+    "with",
+}
 
 
 class WeakScoreConceptCoveragePredictor:
@@ -152,6 +177,55 @@ class ConceptCoveragePredictor:
         return results
 
 
+class NLIConceptCoveragePredictor:
+    """NLI predictor for missing/partial/covered concept labels."""
+
+    backend_name = "nli"
+
+    def __init__(
+        self,
+        model_name: str | None = None,
+        nli_engine: object | None = None,
+    ) -> None:
+        if nli_engine is None:
+            from module1.nli.nli import DEFAULT_NLI_MODEL_NAME, NLIEngine
+
+            nli_engine = NLIEngine(model_name=model_name or DEFAULT_NLI_MODEL_NAME)
+        self.nli_engine = nli_engine
+
+    def predict_row(
+        self,
+        row: pd.Series,
+        concepts: list[dict[str, object]],
+        answer_column: str,
+        question_id_column: str,
+        question_column: str,
+    ) -> list[dict[str, object]]:
+        student_answer = str(row.get(answer_column, ""))
+        concept_texts = [str(concept["concept_text"]) for concept in concepts]
+        results = self.nli_engine.predict_many(
+            [student_answer] * len(concept_texts),
+            concept_texts,
+        )
+        predictions: list[dict[str, object]] = []
+        for concept, result in zip(concepts, results):
+            concept_text = str(concept["concept_text"])
+            label = nli_result_to_concept_label(result, student_answer, concept_text)
+            predictions.append(
+                build_prediction(
+                    concept=concept,
+                    label=label,
+                    confidence=result.entailment,
+                    source=self.backend_name,
+                    nli_label=result.label,
+                    entailment_score=result.entailment,
+                    neutral_score=result.neutral,
+                    contradiction_score=result.contradiction,
+                )
+            )
+        return predictions
+
+
 def build_model_input(question: str, student_answer: str, concept_text: str) -> str:
     return (
         "Question: "
@@ -169,15 +243,56 @@ def build_prediction(
     label: str,
     confidence: float,
     source: str,
+    nli_label: str = "",
+    entailment_score: float | None = None,
+    neutral_score: float | None = None,
+    contradiction_score: float | None = None,
 ) -> dict[str, object]:
     return {
         "concept_id": str(concept["concept_id"]),
         "concept_text": str(concept["concept_text"]),
         "max_mark": float(concept.get("max_mark", 1.0)),
+        "concept_source": str(concept.get("concept_source", "reference")),
+        "concept_generator_backend": str(concept.get("concept_generator_backend", "")),
+        "concept_generator_model": str(concept.get("concept_generator_model", "")),
         "label": label,
         "score": LABEL_TO_SCORE[label],
         "confidence": float(confidence),
         "source": source,
+        "nli_label": nli_label,
+        "entailment_score": entailment_score,
+        "neutral_score": neutral_score,
+        "contradiction_score": contradiction_score,
+    }
+
+
+def nli_result_to_concept_label(
+    result: object,
+    student_answer: object = "",
+    concept_text: object = "",
+) -> str:
+    entailment = float(getattr(result, "entailment", 0.0))
+    contradiction = float(getattr(result, "contradiction", 0.0))
+    if entailment >= NLI_COVERED_THRESHOLD and contradiction < NLI_CONTRADICTION_THRESHOLD:
+        return "covered"
+    if entailment >= NLI_PARTIAL_THRESHOLD or concept_token_overlap(student_answer, concept_text) >= NLI_PARTIAL_OVERLAP_THRESHOLD:
+        return "partial"
+    return "missing"
+
+
+def concept_token_overlap(student_answer: object, concept_text: object) -> float:
+    answer_tokens = content_tokens(student_answer)
+    concept_tokens = content_tokens(concept_text)
+    if not answer_tokens or not concept_tokens:
+        return 0.0
+    return len(answer_tokens.intersection(concept_tokens)) / len(concept_tokens)
+
+
+def content_tokens(value: object) -> set[str]:
+    return {
+        token
+        for token in clean_text(value).split()
+        if len(token) > 2 and token not in NLI_STOP_WORDS
     }
 
 

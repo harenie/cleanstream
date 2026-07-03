@@ -27,7 +27,7 @@ def test_semantic_similarity_fits_reference_answers_only(monkeypatch):
         }
     )
 
-    output = semantic_module.add_semantic_similarity_columns(dataframe)
+    output = semantic_module.add_semantic_similarity_columns(dataframe, similarity_backend="tfidf")
 
     assert captured["backend"] == ["tfidf"]
     assert captured["corpus"] == ["E-commerce is available anywhere and anytime."]
@@ -47,6 +47,8 @@ def test_concept_backend_auto_uses_trained_model_when_available(monkeypatch):
     predictor = build_concept_predictor(
         concept_backend="auto",
         concept_model_path="module1/models/concept_coverage_model",
+        concept_nli_model_name=None,
+        concept_nli_engine=None,
         target_score_column="ai_score",
     )
 
@@ -63,6 +65,8 @@ def test_concept_backend_auto_falls_back_to_weak_score(monkeypatch):
     predictor = build_concept_predictor(
         concept_backend="auto",
         concept_model_path="missing-model",
+        concept_nli_model_name=None,
+        concept_nli_engine=None,
         target_score_column="ai_score",
     )
 
@@ -125,6 +129,31 @@ def test_reasoning_can_use_trained_llm_style_predictor():
     assert result["reasoning_backend"] == "trained-llm"
     assert result["reasoning_model_label"] == "covered"
     assert result["reasoning_model_confidence"] == 0.91
+
+
+def test_reasoning_can_use_nli_predictor():
+    class FakeNLIResult:
+        label = "entailment"
+        entailment = 0.8
+        neutral = 0.1
+        contradiction = 0.1
+
+    class FakeNLIEngine:
+        def predict(self, premise, hypothesis):
+            assert "explains why or how" in hypothesis
+            return FakeNLIResult()
+
+    result = assess_reasoning(
+        "The internet reduces global cost by lowering communication expenses.",
+        "How has the Internet reduced the cost of operating globally?",
+        backend="nli",
+        nli_engine=FakeNLIEngine(),
+        reasoning_expected_type="causal_explanation",
+    )
+
+    assert result["reasoning_quality"] == "good"
+    assert result["reasoning_backend"] == "nli"
+    assert result["reasoning_nli_entailment_score"] == 0.8
 
 
 def test_contradiction_detection_is_scoped_by_question_type():
@@ -204,8 +233,11 @@ def test_full_module1_feature_pipeline_smoke(tmp_path):
         model_answer_column="scheme",
         student_answer_column="synthetic_answer",
         concept_reference_path=concept_reference,
+        concept_source="reference",
         concept_backend="weak-score",
+        similarity_backend="tfidf",
         reasoning_backend="rule-based",
+        contradiction_backend="rule-based",
         question_requirements_path=question_requirements,
         language_check_backend="simple",
         require_model_answer=True,
@@ -225,6 +257,8 @@ def test_full_module1_feature_pipeline_smoke(tmp_path):
         "reasoning_quality",
         "reasoning_connective_density",
         "contradiction_check_applied",
+        "contradiction_backend",
+        "contradiction_score",
         "language_quality_score",
         "cross_question_flag",
         "answer_word_count",

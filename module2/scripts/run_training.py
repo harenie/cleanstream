@@ -170,6 +170,7 @@ def prepare_training_dataframe(
         model_answer_column="model_answer",
         student_answer_column="student_answer",
         question_id_column=question_id_column,
+        similarity_backend="tfidf",
     )
     if target_column not in prepared.columns:
         raise ValueError(f"Dataset is missing target column: {target_column}")

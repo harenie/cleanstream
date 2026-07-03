@@ -24,6 +24,8 @@ from module1.module1_features import build_module1_features
 MODULE1_ROOT = PROJECT_ROOT / "module1"
 STATIC_DIR = MODULE1_ROOT / "web_demo"
 MODEL_PATH = MODULE1_ROOT / "models" / "concept_coverage_model"
+NLI_MODEL_NAME = "MoritzLaurer/deberta-v3-base-mnli-fever-anli"
+CONCEPT_GENERATOR_MODEL_NAME = "google/flan-t5-small"
 
 
 class Module1DemoHandler(BaseHTTPRequestHandler):
@@ -97,9 +99,9 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
     question = str(payload.get("question", "")).strip() or "What is the concept?"
     requested_path = str(payload.get("processing_path", "")).strip().lower()
     reasoning_requirement = str(payload.get("reasoning_requirement", "auto")).strip().lower()
-    if requested_path not in {"llm", "fallback"}:
+    if requested_path not in {"nli", "llm", "fallback"}:
         use_trained_model = bool(payload.get("use_trained_model", True))
-        requested_path = "llm" if use_trained_model else "fallback"
+        requested_path = "nli" if use_trained_model else "fallback"
     if reasoning_requirement not in {"auto", "required", "not_required"}:
         reasoning_requirement = "auto"
 
@@ -130,10 +132,22 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
     if concepts.empty:
         raise ValueError("Schema / model answer must contain at least one concept or sentence.")
 
-    concept_backend = "trained-llm" if requested_path == "llm" else "weak-score"
-    reasoning_backend = "trained-llm" if requested_path == "llm" else "rule-based"
+    concept_backend = {
+        "nli": "nli",
+        "llm": "trained-llm",
+        "fallback": "weak-score",
+    }[requested_path]
+    concept_source = "generated" if requested_path == "nli" else "reference"
+    reasoning_backend = {
+        "nli": "nli",
+        "llm": "trained-llm",
+        "fallback": "rule-based",
+    }[requested_path]
+    contradiction_backend = "nli" if requested_path == "nli" else "rule-based"
+    similarity_backend = "sentence-bert" if requested_path in {"nli", "llm"} else "tfidf"
     with tempfile.TemporaryDirectory(prefix="cleanstream_module1_demo_") as temp_dir:
         concept_reference = Path(temp_dir) / "concepts.csv"
+        generated_concepts = Path(temp_dir) / "generated_concepts.csv"
         question_requirements = Path(temp_dir) / "question_requirements.csv"
         concepts.to_csv(concept_reference, index=False)
         if reasoning_requirement != "auto":
@@ -156,10 +170,17 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
             model_answer_column="scheme",
             student_answer_column="synthetic_answer",
             concept_reference_path=concept_reference,
+            concept_source=concept_source,
+            generated_concepts_path=generated_concepts,
+            concept_generator_model_name=CONCEPT_GENERATOR_MODEL_NAME,
             concept_backend=concept_backend,
             concept_model_path=MODEL_PATH,
+            concept_nli_model_name=NLI_MODEL_NAME,
+            similarity_backend=similarity_backend,
             reasoning_backend=reasoning_backend,
             reasoning_model_path=MODEL_PATH,
+            nli_model_name=NLI_MODEL_NAME,
+            contradiction_backend=contradiction_backend,
             question_requirements_path=question_requirements,
             language_check_backend="simple",
             require_model_answer=True,
@@ -172,6 +193,7 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
             "present": split_concept_cell(row.get("concepts_present")),
             "partial": split_concept_cell(row.get("concepts_partial")),
             "missing": split_concept_cell(row.get("concepts_missing")),
+            "details": parse_concept_details(row.get("concept_prediction_details")),
         },
         "raw": row,
     }
@@ -179,8 +201,10 @@ def run_module1_preview(payload: dict[str, object]) -> dict[str, object]:
 
 def build_result_summary(row: dict[str, object]) -> dict[str, object]:
     return {
-        "processing_path": "llm" if row.get("concept_backend") == "trained-llm" else "fallback",
+        "processing_path": infer_processing_path(row),
+        "concept_source": row.get("concept_source"),
         "concept_backend": row.get("concept_backend"),
+        "similarity_backend": row.get("similarity_backend"),
         "concept_coverage_ratio": row.get("concept_coverage_ratio"),
         "semantic_similarity_score": row.get("semantic_similarity_score"),
         "reasoning_backend": row.get("reasoning_backend"),
@@ -190,16 +214,65 @@ def build_result_summary(row: dict[str, object]) -> dict[str, object]:
         "reasoning_skip_reason": row.get("reasoning_skip_reason"),
         "reasoning_model_label": row.get("reasoning_model_label"),
         "reasoning_model_confidence": row.get("reasoning_model_confidence"),
+        "reasoning_nli_label": row.get("reasoning_nli_label"),
+        "reasoning_nli_entailment_score": row.get("reasoning_nli_entailment_score"),
+        "reasoning_nli_neutral_score": row.get("reasoning_nli_neutral_score"),
+        "reasoning_nli_contradiction_score": row.get("reasoning_nli_contradiction_score"),
         "reasoning_quality": row.get("reasoning_quality"),
         "reasoning_connective_count": row.get("reasoning_connective_count"),
         "contradiction_check_applied": row.get("contradiction_check_applied"),
         "contradiction_detected": row.get("contradiction_detected"),
+        "contradiction_backend": row.get("contradiction_backend"),
+        "contradiction_score": row.get("contradiction_score"),
+        "contradiction_source_concept": row.get("contradiction_source_concept"),
         "language_quality_score": row.get("language_quality_score"),
         "spelling_error_count": row.get("spelling_error_count"),
         "grammar_error_count": row.get("grammar_error_count"),
         "cross_question_flag": row.get("cross_question_flag"),
         "answer_word_count": row.get("answer_word_count"),
     }
+
+
+def infer_processing_path(row: dict[str, object]) -> str:
+    if row.get("concept_backend") == "nli":
+        return "nli"
+    if row.get("concept_backend") == "trained-llm":
+        return "llm"
+    return "fallback"
+
+
+def parse_concept_details(value: object) -> list[dict[str, object]]:
+    details = []
+    for part in split_concept_cell(value):
+        if "=" not in part:
+            continue
+        concept_text, rest = part.rsplit("=", 1)
+        pieces = rest.split(":")
+        detail: dict[str, object] = {
+            "concept": concept_text,
+            "label": pieces[0] if pieces else "",
+            "confidence": parse_float(pieces[1]) if len(pieces) > 1 else None,
+        }
+        if len(pieces) > 2 and "/" in pieces[2]:
+            for score_part in pieces[2].split("/"):
+                if len(score_part) < 2:
+                    continue
+                key = {
+                    "E": "entailment",
+                    "N": "neutral",
+                    "C": "contradiction",
+                }.get(score_part[0])
+                if key:
+                    detail[key] = parse_float(score_part[1:])
+        details.append(detail)
+    return details
+
+
+def parse_float(value: object) -> float | None:
+    try:
+        return round(float(value), 4)
+    except (TypeError, ValueError):
+        return None
 
 
 def split_concept_cell(value: object) -> list[str]:

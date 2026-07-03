@@ -60,7 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--similarity-backend",
         choices=["tfidf", "sentence-bert"],
-        default="tfidf",
+        default="sentence-bert",
         help="Semantic similarity backend.",
     )
     return parser.parse_args()

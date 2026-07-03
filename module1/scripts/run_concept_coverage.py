@@ -59,19 +59,46 @@ def parse_args() -> argparse.Namespace:
         "--concept-reference",
         type=Path,
         default=Path("data/reference/concepts.csv"),
-        help="CSV/XLSX file with question_id, concept_id, concept_text, and max_mark.",
+        help="Fallback CSV/XLSX file with question_id, concept_id, concept_text, and max_mark.",
+    )
+    parser.add_argument(
+        "--concept-source",
+        choices=["generated", "reference", "auto"],
+        default="generated",
+        help="Use FLAN-T5 generated concepts, manual reference concepts, or generated with fallback.",
+    )
+    parser.add_argument(
+        "--generated-concepts",
+        type=Path,
+        default=Path("module1/generated_outputs/generated_concepts.csv"),
+        help="Cache file for FLAN-T5 generated concept statements.",
+    )
+    parser.add_argument(
+        "--concept-generator-model",
+        default="google/flan-t5-small",
+        help="Hugging Face model used to generate concept statements.",
+    )
+    parser.add_argument(
+        "--regenerate-concepts",
+        action="store_true",
+        help="Regenerate concepts even when the generated concept cache exists.",
     )
     parser.add_argument(
         "--concept-backend",
-        choices=["weak-score", "trained-llm"],
-        default="weak-score",
-        help="Concept coverage backend. Use trained-llm after training the transformer.",
+        choices=["weak-score", "trained-llm", "nli"],
+        default="nli",
+        help="Concept coverage backend. NLI uses a DeBERTa-style entailment model.",
     )
     parser.add_argument(
         "--concept-model-path",
         type=Path,
         default=Path("module1/models/concept_coverage_model"),
         help="Path to trained concept coverage transformer model.",
+    )
+    parser.add_argument(
+        "--nli-model",
+        default="MoritzLaurer/deberta-v3-base-mnli-fever-anli",
+        help="Hugging Face MNLI/NLI model used by the nli concept backend.",
     )
     parser.add_argument(
         "--target-score-column",
@@ -105,8 +132,13 @@ def main() -> None:
         max_concepts=args.max_concepts,
         require_model_answer=args.strict_model_answers,
         concept_reference_path=args.concept_reference,
+        concept_source=args.concept_source,
+        generated_concepts_path=args.generated_concepts,
+        concept_generator_model_name=args.concept_generator_model,
+        regenerate_concepts=args.regenerate_concepts,
         concept_backend=args.concept_backend,
         concept_model_path=args.concept_model_path,
+        concept_nli_model_name=args.nli_model,
         target_score_column=args.target_score_column,
     )
 

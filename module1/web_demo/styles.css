@@ -182,8 +182,13 @@ select:focus {
   accent-color: var(--accent);
 }
 
-.path-toggle {
-  min-width: 164px;
+.path-mode {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 700;
 }
 
 button {
@@ -291,7 +296,8 @@ button:disabled {
   gap: 10px;
 }
 
-.concept-columns div {
+.concept-columns div,
+.detail-grid div {
   min-height: 172px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -299,10 +305,23 @@ button:disabled {
   padding: 10px;
 }
 
-.concept-columns h3 {
+.concept-columns h3,
+.detail-grid h3 {
   color: var(--accent-strong);
   font-size: 0.86rem;
   margin-bottom: 8px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1.4fr minmax(0, 0.8fr) minmax(0, 0.8fr);
+  gap: 10px;
+}
+
+.detail-grid p {
+  color: #35383d;
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 ul {
@@ -346,7 +365,8 @@ pre {
   .workspace,
   .metrics-grid,
   .flags,
-  .concept-columns {
+  .concept-columns,
+  .detail-grid {
     grid-template-columns: 1fr;
   }
 

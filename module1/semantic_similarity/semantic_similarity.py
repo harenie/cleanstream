@@ -56,9 +56,11 @@ class SentenceBertSimilarityEngine:
         self,
         corpus: list[str] | None = None,
         model_name: str = "all-MiniLM-L6-v2",
+        device: str | None = None,
     ) -> None:
         try:
             from sentence_transformers import SentenceTransformer
+            import torch
         except ImportError as exc:
             raise ImportError(
                 "Sentence-BERT support requires installing sentence-transformers. "
@@ -66,7 +68,15 @@ class SentenceBertSimilarityEngine:
             ) from exc
 
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name)
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        try:
+            self.model = SentenceTransformer(
+                model_name,
+                device=self.device,
+                local_files_only=True,
+            )
+        except Exception:
+            self.model = SentenceTransformer(model_name, device=self.device)
 
     def fit(self, corpus: list[str]) -> None:
         """Sentence-BERT models are pre-trained, so no local fitting is required."""
@@ -84,7 +94,7 @@ class SentenceBertSimilarityEngine:
 
 
 def build_similarity_engine(
-    backend: str = "tfidf",
+    backend: str = "sentence-bert",
     corpus: list[str] | None = None,
 ) -> SemanticSimilarityEngine | SentenceBertSimilarityEngine:
     """Build the requested semantic similarity engine."""
@@ -102,7 +112,7 @@ def add_semantic_similarity_columns(
     student_answer_column: str = "synthetic_answer",
     question_id_column: str = "question_id",
     require_model_answer: bool = False,
-    similarity_backend: str = "tfidf",
+    similarity_backend: str = "sentence-bert",
 ) -> pd.DataFrame:
     """Add model-vs-student semantic similarity columns.
 

@@ -33,6 +33,15 @@
           </label>
 
           <label class="field">
+            <span>Processing Path</span>
+            <select id="processingPath">
+              <option value="nli" selected>NLI path</option>
+              <option value="llm">Legacy DistilBERT path</option>
+              <option value="fallback">Lightweight fallback</option>
+            </select>
+          </label>
+
+          <label class="field">
             <span>Student Answer</span>
             <textarea id="studentAnswer" rows="7" required>Ubiquity means the internrt is everywhere and customers can shop anytime because the internet is available from many places.</textarea>
           </label>
@@ -47,10 +56,7 @@
           </label>
 
           <div class="action-row">
-            <label class="toggle path-toggle">
-              <input id="useLlmPath" type="checkbox" checked>
-              <span id="pathModeLabel">LLM path</span>
-            </label>
+            <span id="pathModeLabel" class="path-mode">NLI path</span>
             <button id="processButton" type="submit">Process</button>
           </div>
         </form>
@@ -101,8 +107,24 @@
               <strong id="conceptBackend">-</strong>
             </div>
             <div>
+              <span>Concept Source</span>
+              <strong id="conceptSource">-</strong>
+            </div>
+            <div>
+              <span>Similarity</span>
+              <strong id="similarityBackend">-</strong>
+            </div>
+            <div>
               <span>Reasoning Backend</span>
               <strong id="reasoningBackend">-</strong>
+            </div>
+            <div>
+              <span>Contradiction Backend</span>
+              <strong id="contradictionBackend">-</strong>
+            </div>
+            <div>
+              <span>Contradiction Score</span>
+              <strong id="contradictionScore">-</strong>
             </div>
           </div>
 
@@ -120,6 +142,24 @@
               <div>
                 <h3>Missing</h3>
                 <ul id="missingConcepts"></ul>
+              </div>
+            </div>
+          </section>
+
+          <section class="concept-panel">
+            <h2>NLI Details</h2>
+            <div class="detail-grid">
+              <div>
+                <h3>Concept Judgements</h3>
+                <ul id="conceptDetails"></ul>
+              </div>
+              <div>
+                <h3>Reasoning</h3>
+                <p id="reasoningNliDetail">-</p>
+              </div>
+              <div>
+                <h3>Contradiction</h3>
+                <p id="contradictionDetail">-</p>
               </div>
             </div>
           </section>
